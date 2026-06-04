@@ -44,11 +44,16 @@ export class UTXOpiaSuiIkaAdapter {
   }
 
   createClient(): IkaClient {
+    const suiClient = new SuiJsonRpcClient({
+      url: this.config.rpcUrl,
+      network: this.config.network ?? "testnet",
+    });
     return new IkaClient({
-      suiClient: new SuiJsonRpcClient({
-        url: this.config.rpcUrl,
-        network: this.config.network ?? "testnet",
-      }),
+      // Cast across package boundaries: when a consumer's dependency tree holds
+      // two @mysten/sui copies (ours vs @ika.xyz/sdk's nested one), the nominal
+      // #private fields make structurally-identical client types incompatible.
+      // The runtime object is the same either way.
+      suiClient: suiClient as unknown as ConstructorParameters<typeof IkaClient>[0]["suiClient"],
       config: this.ikaConfig,
       cache: true,
       encryptionKeyOptions: { autoDetect: true },
@@ -210,7 +215,9 @@ export class UTXOpiaSuiIkaAdapter {
   private createIkaTransaction(tx: Transaction, ikaClient = this.createClient()): IkaTransaction {
     return new IkaTransaction({
       ikaClient,
-      transaction: tx,
+      // Same cross-copy cast rationale as createClient(): the consumer tree may
+      // resolve @ika.xyz/sdk against a different @mysten/sui copy than ours.
+      transaction: tx as unknown as ConstructorParameters<typeof IkaTransaction>[0]["transaction"],
       userShareEncryptionKeys: this.config.userShareEncryptionKeys,
     });
   }
