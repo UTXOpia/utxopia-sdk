@@ -4,9 +4,6 @@
   "description": "UTXOpia public SDK workspace",
   "type": "module",
   "private": false,
-  "workspaces": [
-    "packages/*"
-  ],
   "main": "./packages/sdk/src/index.ts",
   "module": "./packages/sdk/src/index.ts",
   "types": "./packages/sdk/src/index.ts",
