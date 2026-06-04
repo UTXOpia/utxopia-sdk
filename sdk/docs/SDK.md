@@ -541,18 +541,6 @@ Large data upload to Solana (for SPV proofs exceeding tx size):
 | `SDK_VERSION/DEPLOYMENT_INFO` | Build metadata |
 | `JOINSPLIT_TREE_DEPTH` | 16 |
 
-### Demo (`./demo`)
-
-Development/testing helpers (devnet only):
-
-| Export | Description |
-|--------|-------------|
-| `DEMO_INSTRUCTION` | Demo instruction discriminator (13) |
-| `buildAddDemoStealthData(params)` | Build demo deposit instruction |
-| `parseAddDemoStealthData(data)` | Parse demo deposit data |
-
----
-
 ## Testing
 
 ```bash

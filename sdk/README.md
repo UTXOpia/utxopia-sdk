@@ -73,34 +73,6 @@ const notes = await scanAnnouncements(keys, onChainAnnouncements);
 const claimInputs = await prepareClaimInputs(keys, note, merkleProof);
 ```
 
-### Demo Instructions (Testing/Development)
-
-Add mock deposits without real BTC for testing:
-
-```typescript
-import {
-  buildAddDemoNoteData,
-  buildAddDemoStealthData,
-  getPoolStatePDASeeds,
-  getCommitmentTreePDASeeds,
-  DEMO_INSTRUCTION,
-} from '@utxopia/sdk';
-
-// Build demo note instruction data
-const noteData = buildAddDemoNoteData(secret); // 32-byte secret
-
-// Build demo stealth instruction data
-const stealthData = buildAddDemoStealthData(
-  ephemeralPub,  // 32 bytes (Ed25519)
-  commitment,    // 32 bytes
-  amountSats     // bigint
-);
-
-// Get PDA seeds for instruction construction
-const { seeds: poolSeeds } = getPoolStatePDASeeds();
-const { seeds: treeSeeds } = getCommitmentTreePDASeeds();
-```
-
 ### Note Generation
 
 Create and manage shielded notes:
@@ -167,18 +139,6 @@ const noirProof = proofToNoirFormat(proof);
 | `scanUnifiedNotes(keys, announcements)` | Scan announcement events for owned notes |
 | `resolveSnsName(conn, name)` | Look up .utxopia.sol name to stealth address |
 
-### Demo Module
-
-| Function | Description |
-|----------|-------------|
-| `buildAddDemoNoteData(secret)` | Build demo note instruction data |
-| `buildAddDemoStealthData(ephemeral, commit, amount)` | Build demo stealth data |
-| `getPoolStatePDASeeds()` | Get pool state PDA seeds |
-| `getCommitmentTreePDASeeds()` | Get commitment tree PDA seeds |
-| `parseProgramEvents(logs)` | Parse sol_log_data events from tx logs |
-| `getDemoNoteAccountMetas()` | Get account metas for demo note |
-| `getDemoStealthAccountMetas()` | Get account metas for demo stealth |
-
 ### Key Derivation Module
 
 | Function | Description |
@@ -201,9 +161,6 @@ TREE_DEPTH              // 20
 MAX_LEAVES              // 2^20
 ZERO_VALUE              // Empty leaf value
 
-// Demo Instructions
-DEMO_INSTRUCTION.ADD_DEMO_NOTE    // 21
-DEMO_INSTRUCTION.ADD_DEMO_STEALTH // 22
 ```
 
 ## Types

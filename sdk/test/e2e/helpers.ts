@@ -20,7 +20,6 @@ import {
 } from "../../src/poseidon";
 import { randomFieldElement, bigintToBytes, bytesToBigint } from "../../src/crypto";
 import { derivePoolStatePDA, deriveCommitmentTreePDA, deriveNullifierRecordPDA } from "../../src/pda";
-import { DEMO_INSTRUCTION, buildAddDemoStealthData } from "../../src/demo";
 import {
   ed25519GenerateKeyPair,
 } from "../../src/crypto";
@@ -410,46 +409,4 @@ export function hexToBytes(hex: string): Uint8Array {
     bytes[i] = parseInt(cleanHex.slice(i * 2, i * 2 + 2), 16);
   }
   return bytes;
-}
-
-// =============================================================================
-// Demo Deposit Helper
-// =============================================================================
-
-/**
- * Build instruction data for adding a demo stealth announcement
- *
- * This is used to seed the commitment tree for testing.
- */
-export function buildDemoStealthInstructionData(
-  ephemeralPub: Uint8Array,
-  commitment: Uint8Array,
-  encryptedAmount: Uint8Array
-): Uint8Array {
-  return buildAddDemoStealthData(ephemeralPub, commitment, encryptedAmount);
-}
-
-/**
- * Create demo deposit for testing
- *
- * Returns both the note and the instruction data needed to add it on-chain.
- */
-export function createDemoDeposit(amount: bigint): {
-  note: TestNote;
-  instructionData: Uint8Array;
-  ephemeralPub: Uint8Array;
-} {
-  const note = createTestNote(amount, 0n);
-
-  // Create mock stealth announcement
-  const { ephemeralPub, encryptedAmount } = createMockStealthAnnouncement(amount);
-
-  // Build instruction data
-  const instructionData = buildDemoStealthInstructionData(
-    ephemeralPub,
-    note.commitmentBytes,
-    encryptedAmount
-  );
-
-  return { note, instructionData, ephemeralPub };
 }
