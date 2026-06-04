@@ -11,7 +11,7 @@ import {
 } from "@ika.xyz/sdk";
 import { SuiJsonRpcClient } from "@mysten/sui/jsonRpc";
 import { Transaction } from "@mysten/sui/transactions";
-import type { SuiUnsignedTransaction } from "@utxopia/sdk-core";
+import type { SuiUnsignedTransaction } from "../../sdk-core/src/index";
 
 export interface UTXOpiaSuiIkaConfig {
   rpcUrl: string;

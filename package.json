@@ -1,0 +1,109 @@
+{
+  "name": "@utxopia/sdk",
+  "version": "2.0.2",
+  "description": "UTXOpia public SDK workspace",
+  "type": "module",
+  "private": false,
+  "main": "./sdk/dist/index.js",
+  "module": "./sdk/dist/index.js",
+  "types": "./sdk/dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./sdk/dist/index.d.ts",
+      "import": "./sdk/dist/index.js",
+      "default": "./sdk/dist/index.js"
+    },
+    "./prover": {
+      "types": "./sdk/dist/prover/index.d.ts",
+      "import": "./sdk/dist/prover/index.js",
+      "default": "./sdk/dist/prover/index.js"
+    },
+    "./prover/web": {
+      "types": "./sdk/dist/prover/web.d.ts",
+      "import": "./sdk/dist/prover/web.js",
+      "default": "./sdk/dist/prover/web.js"
+    },
+    "./prover/mobile": {
+      "types": "./sdk/dist/prover/mobile.d.ts",
+      "import": "./sdk/dist/prover/mobile.js",
+      "default": "./sdk/dist/prover/mobile.js"
+    },
+    "./stealth": {
+      "types": "./sdk/dist/stealth/index.d.ts",
+      "import": "./sdk/dist/stealth/index.js",
+      "default": "./sdk/dist/stealth/index.js"
+    },
+    "./bitcoin": {
+      "types": "./sdk/dist/bitcoin/index.d.ts",
+      "import": "./sdk/dist/bitcoin/index.js",
+      "default": "./sdk/dist/bitcoin/index.js"
+    },
+    "./solana": {
+      "types": "./sdk/dist/solana/index.d.ts",
+      "import": "./sdk/dist/solana/index.js",
+      "default": "./sdk/dist/solana/index.js"
+    },
+    "./watcher": {
+      "types": "./sdk/dist/watcher/index.d.ts",
+      "import": "./sdk/dist/watcher/index.js",
+      "default": "./sdk/dist/watcher/index.js"
+    },
+    "./watcher/web": {
+      "types": "./sdk/dist/watcher/web.d.ts",
+      "import": "./sdk/dist/watcher/web.js",
+      "default": "./sdk/dist/watcher/web.js"
+    },
+    "./watcher/native": {
+      "types": "./sdk/dist/watcher/native.d.ts",
+      "import": "./sdk/dist/watcher/native.js",
+      "default": "./sdk/dist/watcher/native.js"
+    },
+    "./react": {
+      "types": "./sdk/dist/react/index.d.ts",
+      "import": "./sdk/dist/react/index.js",
+      "default": "./sdk/dist/react/index.js"
+    },
+    "./sui": {
+      "types": "./sdk-sui/src/index.ts",
+      "import": "./sdk-sui/src/index.ts",
+      "default": "./sdk-sui/src/index.ts"
+    }
+  },
+  "scripts": {
+    "build": "cd sdk && bunx tsc",
+    "test": "cd sdk && bun install --ignore-scripts && bun test",
+    "prepare": "cd sdk && bunx tsc"
+  },
+  "dependencies": {
+    "@ika.xyz/sdk": "^0.4.1",
+    "@mysten/sui": "^2.17.0",
+    "@noble/ciphers": "^2.2.0",
+    "@noble/curves": "2.0.1",
+    "@noble/hashes": "1.8.0",
+    "@scure/base": "2.0.0",
+    "@scure/btc-signer": "2.0.1",
+    "@solana-program/system": "^0.10.0",
+    "@solana/kit": "^5.5.0",
+    "bech32": "^2.0.0",
+    "circomlibjs": "^0.1.7",
+    "poseidon-lite": "0.3.0"
+  },
+  "peerDependencies": {
+    "react": ">=17.0.0",
+    "snarkjs": "^0.7.5"
+  },
+  "peerDependenciesMeta": {
+    "react": {
+      "optional": true
+    },
+    "snarkjs": {
+      "optional": true
+    }
+  },
+  "devDependencies": {
+    "@solana/web3.js": "^1.98.4",
+    "@types/node": "^20.10.0",
+    "@types/react": "^19",
+    "typescript": "^5.3.0"
+  }
+}

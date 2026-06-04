@@ -12,11 +12,11 @@ import type {
   TransactionResult,
   TransactInput,
   UTXOpiaChainAdapter,
-} from "@utxopia/sdk-core";
+} from "../../sdk-core/src/index";
 import {
   assertSuiGroth16Compatible,
   joinSplitShape,
-} from "@utxopia/sdk-core";
+} from "../../sdk-core/src/index";
 
 export interface UTXOpiaSuiAdapterConfig {
   rpcUrl: string;
