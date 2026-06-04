@@ -235,7 +235,9 @@ let eddsaInstance: Eddsa | null = null;
 
 async function getEddsa(): Promise<Eddsa> {
   if (!eddsaInstance) {
-    const { buildEddsa } = await import("circomlibjs");
+    const { buildEddsa } = (await import("circomlibjs")) as unknown as {
+      buildEddsa(): Promise<Eddsa>;
+    };
     eddsaInstance = await buildEddsa();
   }
   return eddsaInstance;
