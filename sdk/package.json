@@ -81,7 +81,7 @@
     "test:e2e:partial": "bun test test/e2e/partial-public.test.ts",
     "test:e2e:nullifier": "bun test test/e2e/nullifier.test.ts",
     "test:e2e:tree": "bun test test/e2e/tree-consistency.test.ts",
-    "copy-circuits": "mkdir -p circuits && cp -r ../circuits/build/* circuits/",
+    "copy-circuits": "CIRCUITS_DIR=${UTXOPIA_CIRCUITS_DIR:-../../utxopia-circuits/circuits}; mkdir -p circuits && cp -r \"$CIRCUITS_DIR\"/build/* circuits/",
     "e2e": "bun run scripts/e2e-mock-spv.ts"
   },
   "dependencies": {

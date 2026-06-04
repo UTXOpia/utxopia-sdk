@@ -67,12 +67,18 @@
       "types": "./sdk-sui/src/index.ts",
       "import": "./sdk-sui/src/index.ts",
       "default": "./sdk-sui/src/index.ts"
+    },
+    "./btc-client": {
+      "types": "./btc-client/src/index.ts",
+      "import": "./btc-client/src/index.ts",
+      "default": "./btc-client/src/index.ts"
     }
   },
   "scripts": {
     "build": "cd sdk && bunx tsc",
     "test": "cd sdk && bun install --ignore-scripts && bun test",
-    "prepare": "cd sdk && bunx tsc"
+    "prepare": "cd sdk && bunx tsc",
+    "copy-circuits": "cd sdk && bun run copy-circuits"
   },
   "dependencies": {
     "@ika.xyz/sdk": "^0.4.1",
