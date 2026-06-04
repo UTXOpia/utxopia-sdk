@@ -34,6 +34,7 @@ export {
   bytesToHex,
   // Hashing
   sha256Hash,
+  x25519Ecdh,
   // Low-level crypto (needed by E2E test scripts + contract deploy scripts)
   randomFieldElement,
   BN254_FIELD_PRIME,
