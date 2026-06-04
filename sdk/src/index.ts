@@ -176,11 +176,6 @@ export {
   reduceToField,
 } from "./poseidon";
 
-export {
-  DEMO_INSTRUCTION,
-  buildAddDemoStealthData,
-} from "./demo";
-
 // ==========================================================================
 // Token Registry (multi-token support)
 // ==========================================================================
