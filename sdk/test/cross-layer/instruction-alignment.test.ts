@@ -33,21 +33,6 @@ const CONTRACT = {
       "token_program (read)",
     ],
   },
-  addDemoStealth: {
-    disc: 13,
-    dataLen: 72, // ephemeral_pub(32) + npk(32) + amount_sats(8)
-    accountCount: 8,
-    accounts: [
-      "pool_state (writable)",
-      "commitment_tree (writable)",
-      "authority (signer)",
-      "system_program (read)",
-      "zkbtc_mint (writable)",
-      "pool_vault (writable)",
-      "token_program (read)",
-      "token_config (read)",
-    ],
-  },
   registerToken: {
     disc: 28,
     dataLen: 32, // service_fee(8) + min_deposit(8) + max_deposit(8) + deposit_cap(8)
@@ -124,47 +109,6 @@ describe("Cross-layer: instruction alignment", () => {
       expect(CONTRACT.shield.accounts[4]).toContain("vault");
       expect(CONTRACT.shield.accounts[5]).toContain("commitment_tree");
       expect(CONTRACT.shield.accounts[6]).toContain("token_program");
-    });
-  });
-
-  describe("add_demo_stealth (disc=13)", () => {
-    it("builds correct data format: ephemeral_pub(32) + npk(32) + amount(8) = 72 bytes", () => {
-      const ephemeralPub = new Uint8Array(32).fill(0x11);
-      const npk = new Uint8Array(32).fill(0x22);
-      const amount = 10000n;
-
-      // Build like topup-stealth.mjs does
-      const data = new Uint8Array(73);
-      data[0] = CONTRACT.addDemoStealth.disc;
-      data.set(ephemeralPub, 1);
-      data.set(npk, 33);
-      const view = new DataView(data.buffer);
-      view.setBigUint64(65, amount, true);
-
-      // Contract receives without disc
-      const contractData = data.slice(1);
-      expect(contractData.length).toBe(CONTRACT.addDemoStealth.dataLen);
-
-      // Verify ephemeral_pub at [0..32]
-      expect(contractData.slice(0, 32)).toEqual(ephemeralPub);
-
-      // Verify npk at [32..64]
-      expect(contractData.slice(32, 64)).toEqual(npk);
-
-      // Verify amount at [64..72]
-      const parsedAmount = new DataView(contractData.buffer, contractData.byteOffset).getBigUint64(64, true);
-      expect(parsedAmount).toBe(amount);
-    });
-
-    it("requires exactly 8 accounts", () => {
-      expect(CONTRACT.addDemoStealth.accountCount).toBe(8);
-    });
-
-    it("has different data layout from shield (ephemeral first vs amount first)", () => {
-      // Shield: amount(8) + npk(32) + ephemeral(32)
-      // Demo:   ephemeral(32) + npk(32) + amount(8)
-      // This is intentional — verify they're NOT accidentally swapped
-      expect(CONTRACT.shield.disc).not.toBe(CONTRACT.addDemoStealth.disc);
     });
   });
 

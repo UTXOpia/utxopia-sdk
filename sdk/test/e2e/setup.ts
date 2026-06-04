@@ -7,10 +7,8 @@
  * Prerequisites:
  * - solana-test-validator running with devnet features:
  *   solana-test-validator --clone-feature-set --url devnet --reset
- * - Programs deployed to localnet:
- *   cd contracts && bun run deploy:localnet
- * - Circuits compiled:
- *   cd circuits && bun run compile:all && bun run copy-to-sdk
+ * - Programs deployed to localnet by the ops E2E setup
+ * - Circuits copied into sdk/circuits, or UTXOPIA_SDK_CIRCUITS_DIR set
  */
 
 import { Connection, Keypair, LAMPORTS_PER_SOL, PublicKey } from "@solana/web3.js";
@@ -108,8 +106,8 @@ export const PROOF_TIMEOUT = 300_000; // 5 minutes for real proof generation
 export const REAL_PROOF_SIZE = 256; // Groth16 proof = 2 G1 + 1 G2 on BN254 = 256 bytes
 
 const LOCALNET_CONFIG_PATH = path.resolve(
-  __dirname,
-  "../../../contracts/.localnet-config.json"
+  process.env.UTXOPIA_SOLANA_LOCALNET_CONFIG ??
+    path.resolve(__dirname, "../../../../utxopia-solana-programs/contracts/.localnet-config.json")
 );
 
 // Use the Solana CLI configured keypair (matches deploy script)
