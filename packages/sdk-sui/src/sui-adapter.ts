@@ -23,8 +23,14 @@ export interface UTXOpiaSuiAdapterConfig {
   packageId: string;
   poolObjectId: string;
   poolInitialSharedVersion?: number | string;
+  commitmentTreeObjectId?: string;
+  commitmentTreeInitialSharedVersion?: number | string;
   btcDepositRegistryObjectId?: string;
   btcDepositRegistryInitialSharedVersion?: number | string;
+  utxoSetObjectId?: string;
+  utxoSetInitialSharedVersion?: number | string;
+  lightClientObjectId?: string;
+  lightClientInitialSharedVersion?: number | string;
   adminCapObjectId?: string;
   adminCapVersion?: string;
   adminCapDigest?: string;
@@ -76,24 +82,60 @@ export class UTXOpiaSuiAdapter implements UTXOpiaChainAdapter {
     throw new Error("Sui generic shield PTBs are disabled; use buildBtcDepositTransaction with a verified BTC deposit object");
   }
 
+  /**
+   * Trustless SPV deposit: composes `btc_light_client::verify_tx_inclusion` and
+   * `btc_deposit::complete_deposit` in one PTB. The inclusion proof is verified
+   * on-chain against the light client's canonical chain; the resulting
+   * `VerifiedInclusion` hot potato is consumed by `complete_deposit`.
+   */
   async buildBtcDepositTransaction(input: {
-    verifiedDepositObjectId: string;
-    verifiedDepositVersion: string;
-    verifiedDepositDigest: string;
+    /** Hash of the (canonical, sufficiently confirmed) block containing the sweep tx. */
+    blockHash: Uint8Array;
+    /** Internal-byte-order txid of the SPV-proven sweep transaction. */
+    sweepTxid: Uint8Array;
+    /** Index of the sweep tx within the block. */
+    txIndex: number;
+    /** Merkle branch from the sweep tx up to the block's merkle root. */
+    merkleSiblings: Uint8Array[];
+    /** Path bits for the merkle branch (bit i = side at level i). */
+    pathBits: bigint | number;
+    /** Raw bytes of the SPV-proven sweep transaction. */
+    sweepRawTx: Uint8Array;
+    /** Raw bytes of the original deposit tx carrying the OP_RETURN; omit when directToPool. */
+    depositRawTx?: Uint8Array;
+    /** True when the deposit paid the pool directly (sweep tx IS the deposit tx). */
+    directToPool: boolean;
+    /** Pool scriptPubKey to locate the credited output; empty selects by OP_RETURN heuristic. */
+    poolScript?: Uint8Array;
   }): Promise<SuiUnsignedTransaction> {
     if (!this.config.btcDepositRegistryObjectId) {
       throw new Error("Sui BTC deposit registry object ID is required to build BTC deposit PTBs");
     }
+    if (!this.config.utxoSetObjectId) {
+      throw new Error("Sui UTXO set object ID is required to build BTC deposit PTBs");
+    }
+    if (!this.config.lightClientObjectId) {
+      throw new Error("Sui BTC light client object ID is required to build BTC deposit PTBs");
+    }
+    if (!this.config.commitmentTreeObjectId) {
+      throw new Error("Sui commitment tree object ID is required to build BTC deposit PTBs");
+    }
 
     const tx = new Transaction();
-    const verifiedDeposit = tx.objectRef({
-      objectId: input.verifiedDepositObjectId,
-      version: input.verifiedDepositVersion,
-      digest: input.verifiedDepositDigest,
+    const inclusion = tx.moveCall({
+      target: `${this.config.packageId}::btc_light_client::verify_tx_inclusion`,
+      arguments: [
+        this.sharedObject(tx, this.config.lightClientObjectId, this.config.lightClientInitialSharedVersion, false),
+        tx.pure.vector("u8", input.blockHash),
+        tx.pure.vector("u8", input.sweepTxid),
+        tx.pure.u32(input.txIndex),
+        tx.pure("vector<vector<u8>>", input.merkleSiblings.map((bytes) => Array.from(bytes))),
+        tx.pure.u64(input.pathBits.toString()),
+      ],
     });
 
     tx.moveCall({
-      target: `${this.config.packageId}::btc_deposit::complete_verified_deposit`,
+      target: `${this.config.packageId}::btc_deposit::complete_deposit`,
       arguments: [
         this.sharedObject(tx, this.config.poolObjectId, this.config.poolInitialSharedVersion, true),
         this.sharedObject(
@@ -102,18 +144,34 @@ export class UTXOpiaSuiAdapter implements UTXOpiaChainAdapter {
           this.config.btcDepositRegistryInitialSharedVersion,
           true,
         ),
-        verifiedDeposit,
+        this.sharedObject(tx, this.config.utxoSetObjectId, this.config.utxoSetInitialSharedVersion, true),
+        this.sharedObject(
+          tx,
+          this.config.commitmentTreeObjectId,
+          this.config.commitmentTreeInitialSharedVersion,
+          true,
+        ),
+        inclusion,
+        tx.pure.vector("u8", input.sweepRawTx),
+        tx.pure.vector("u8", input.depositRawTx ?? new Uint8Array()),
+        tx.pure.bool(input.directToPool),
+        tx.pure.vector("u8", input.poolScript ?? new Uint8Array()),
       ],
     });
 
-    return this.buildPtb(tx, "Sui verified BTC deposit PTB", [
-      input.verifiedDepositObjectId,
+    return this.buildPtb(tx, "Sui SPV BTC deposit PTB", [
+      this.config.lightClientObjectId,
       this.config.poolObjectId,
       this.config.btcDepositRegistryObjectId,
+      this.config.utxoSetObjectId,
+      this.config.commitmentTreeObjectId,
     ]);
   }
 
   async buildTransactTransaction(input: TransactInput): Promise<SuiUnsignedTransaction> {
+    if (!this.config.commitmentTreeObjectId) {
+      throw new Error("Sui commitment tree object ID is required to build transact PTBs");
+    }
     if (!this.config.nullifierRegistryObjectId) {
       throw new Error("Sui nullifier registry object ID is required to build transact PTBs");
     }
@@ -135,7 +193,13 @@ export class UTXOpiaSuiAdapter implements UTXOpiaChainAdapter {
     tx.moveCall({
       target: `${this.config.packageId}::transact::transact`,
       arguments: [
-        this.sharedObject(tx, this.config.poolObjectId, this.config.poolInitialSharedVersion, true),
+        this.sharedObject(tx, this.config.poolObjectId, this.config.poolInitialSharedVersion, false),
+        this.sharedObject(
+          tx,
+          this.config.commitmentTreeObjectId,
+          this.config.commitmentTreeInitialSharedVersion,
+          true,
+        ),
         this.sharedObject(
           tx,
           this.config.nullifierRegistryObjectId,
@@ -160,6 +224,7 @@ export class UTXOpiaSuiAdapter implements UTXOpiaChainAdapter {
 
     return this.buildPtb(tx, "Sui private transfer PTB", [
       this.config.poolObjectId,
+      this.config.commitmentTreeObjectId,
       this.config.nullifierRegistryObjectId,
       this.config.verifyingKeyRegistryObjectId,
     ]);
@@ -204,18 +269,29 @@ export class UTXOpiaSuiAdapter implements UTXOpiaChainAdapter {
     ]);
   }
 
+  /**
+   * Policy-gated, single-use signing approval. Shares a `SigningApproval` object
+   * bound to the redemption; the off-chain signer consumes it atomically with the
+   * Ika `requestSign` PTB via {@link buildConsumeApprovalTransaction}.
+   */
   async buildIkaApprovalTransaction(input: {
     redemptionId: bigint | number;
     sighash: Uint8Array;
+    /** Ika dWallet cap object the approval is bound to. */
+    dwalletCapId: string;
+    /** Estimated BTC miner fee; must satisfy policy and the request's maxFeeSats. */
+    estimatedMinerFeeSats: bigint | number;
   }): Promise<SuiUnsignedTransaction> {
     if (!this.config.redemptionQueueObjectId) {
       throw new Error("Sui redemption queue object ID is required to build Ika approval PTBs");
     }
+    const redemptionCap = this.redemptionCapRef();
 
     const tx = new Transaction();
     tx.moveCall({
       target: `${this.config.packageId}::ika_policy::approve_signing`,
       arguments: [
+        tx.objectRef(redemptionCap),
         this.sharedObject(tx, this.config.poolObjectId, this.config.poolInitialSharedVersion, false),
         this.sharedObject(
           tx,
@@ -223,14 +299,54 @@ export class UTXOpiaSuiAdapter implements UTXOpiaChainAdapter {
           this.config.redemptionQueueInitialSharedVersion,
           false,
         ),
+        tx.pure.address(input.dwalletCapId),
         tx.pure.u64(input.redemptionId.toString()),
+        tx.pure.u64(input.estimatedMinerFeeSats.toString()),
         tx.pure.vector("u8", input.sighash),
       ],
     });
 
     return this.buildPtb(tx, "Sui Ika signing approval PTB", [
+      redemptionCap.objectId,
       this.config.poolObjectId,
       this.config.redemptionQueueObjectId,
+    ]);
+  }
+
+  /**
+   * Burn a shared `SigningApproval` (single-use). Compose in the SAME PTB as the
+   * Ika sign request so the approval is consumed atomically with signing.
+   */
+  async buildConsumeApprovalTransaction(input: {
+    approvalObjectId: string;
+    approvalInitialSharedVersion: number | string;
+  }): Promise<SuiUnsignedTransaction> {
+    if (!this.config.redemptionQueueObjectId) {
+      throw new Error("Sui redemption queue object ID is required to build approval-consume PTBs");
+    }
+    const redemptionCap = this.redemptionCapRef();
+
+    const tx = new Transaction();
+    tx.moveCall({
+      target: `${this.config.packageId}::ika_policy::consume_approval`,
+      arguments: [
+        tx.objectRef(redemptionCap),
+        this.sharedObject(tx, this.config.poolObjectId, this.config.poolInitialSharedVersion, false),
+        this.sharedObject(
+          tx,
+          this.config.redemptionQueueObjectId,
+          this.config.redemptionQueueInitialSharedVersion,
+          false,
+        ),
+        this.sharedObject(tx, input.approvalObjectId, input.approvalInitialSharedVersion, true),
+      ],
+    });
+
+    return this.buildPtb(tx, "Sui Ika approval consume PTB", [
+      redemptionCap.objectId,
+      this.config.poolObjectId,
+      this.config.redemptionQueueObjectId,
+      input.approvalObjectId,
     ]);
   }
 
@@ -356,6 +472,17 @@ export class UTXOpiaSuiAdapter implements UTXOpiaChainAdapter {
       description,
       packageId: this.config.packageId,
       objectIds,
+    };
+  }
+
+  private redemptionCapRef() {
+    if (!this.config.redemptionCapObjectId || !this.config.redemptionCapVersion || !this.config.redemptionCapDigest) {
+      throw new Error("Sui redemption cap object ref is required for policy-gated PTBs");
+    }
+    return {
+      objectId: this.config.redemptionCapObjectId,
+      version: this.config.redemptionCapVersion,
+      digest: this.config.redemptionCapDigest,
     };
   }
 

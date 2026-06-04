@@ -10,8 +10,14 @@ function adapter() {
     packageId: objectId,
     poolObjectId: objectId,
     poolInitialSharedVersion: 1,
+    commitmentTreeObjectId: objectId,
+    commitmentTreeInitialSharedVersion: 1,
     btcDepositRegistryObjectId: objectId,
     btcDepositRegistryInitialSharedVersion: 1,
+    utxoSetObjectId: objectId,
+    utxoSetInitialSharedVersion: 1,
+    lightClientObjectId: objectId,
+    lightClientInitialSharedVersion: 1,
     adminCapObjectId: objectId,
     adminCapVersion: "1",
     adminCapDigest: "11111111111111111111111111111111",
@@ -80,11 +86,15 @@ test("rejects Sui verifying keys with incorrect public input counts", async () =
   })).rejects.toThrow("joinsplit_2x2 expects 6 public inputs");
 });
 
-test("builds verified BTC deposit PTB transaction-kind bytes offline", async () => {
+test("builds SPV BTC deposit PTB transaction-kind bytes offline", async () => {
   const tx = await adapter().buildBtcDepositTransaction({
-    verifiedDepositObjectId: objectId,
-    verifiedDepositVersion: "1",
-    verifiedDepositDigest: "11111111111111111111111111111111",
+    blockHash: new Uint8Array(32).fill(1),
+    sweepTxid: new Uint8Array(32).fill(2),
+    txIndex: 0,
+    merkleSiblings: [new Uint8Array(32).fill(3)],
+    pathBits: 0,
+    sweepRawTx: new Uint8Array([1, 2, 3]),
+    directToPool: true,
   });
 
   expect(tx.kind).toBe("sui-programmable-transaction-block");
@@ -138,10 +148,23 @@ test("builds Ika approval PTB transaction-kind bytes offline", async () => {
   const tx = await adapter().buildIkaApprovalTransaction({
     redemptionId: 0,
     sighash: new Uint8Array(32).fill(9),
+    dwalletCapId: objectId,
+    estimatedMinerFeeSats: 800,
   });
 
   expect(tx.kind).toBe("sui-programmable-transaction-block");
   expect(tx.bytes.length).toBeGreaterThan(0);
+});
+
+test("builds Ika approval consume PTB transaction-kind bytes offline", async () => {
+  const tx = await adapter().buildConsumeApprovalTransaction({
+    approvalObjectId: objectId,
+    approvalInitialSharedVersion: 1,
+  });
+
+  expect(tx.kind).toBe("sui-programmable-transaction-block");
+  expect(tx.bytes.length).toBeGreaterThan(0);
+  expect(tx.objectIds).toContain(objectId);
 });
 
 test("builds redemption completion PTB transaction-kind bytes offline", async () => {
