@@ -4,81 +4,84 @@
   "description": "UTXOpia public SDK workspace",
   "type": "module",
   "private": false,
-  "main": "./sdk/src/index.ts",
-  "module": "./sdk/src/index.ts",
-  "types": "./sdk/src/index.ts",
+  "workspaces": [
+    "packages/*"
+  ],
+  "main": "./packages/sdk/src/index.ts",
+  "module": "./packages/sdk/src/index.ts",
+  "types": "./packages/sdk/src/index.ts",
   "exports": {
     ".": {
-      "types": "./sdk/src/index.ts",
-      "import": "./sdk/src/index.ts",
-      "default": "./sdk/src/index.ts"
+      "types": "./packages/sdk/src/index.ts",
+      "import": "./packages/sdk/src/index.ts",
+      "default": "./packages/sdk/src/index.ts"
     },
     "./prover": {
-      "types": "./sdk/src/prover/index.ts",
-      "import": "./sdk/src/prover/index.ts",
-      "default": "./sdk/src/prover/index.ts"
+      "types": "./packages/sdk/src/prover/index.ts",
+      "import": "./packages/sdk/src/prover/index.ts",
+      "default": "./packages/sdk/src/prover/index.ts"
     },
     "./prover/web": {
-      "types": "./sdk/src/prover/web.ts",
-      "import": "./sdk/src/prover/web.ts",
-      "default": "./sdk/src/prover/web.ts"
+      "types": "./packages/sdk/src/prover/web.ts",
+      "import": "./packages/sdk/src/prover/web.ts",
+      "default": "./packages/sdk/src/prover/web.ts"
     },
     "./prover/mobile": {
-      "types": "./sdk/src/prover/mobile.ts",
-      "import": "./sdk/src/prover/mobile.ts",
-      "default": "./sdk/src/prover/mobile.ts"
+      "types": "./packages/sdk/src/prover/mobile.ts",
+      "import": "./packages/sdk/src/prover/mobile.ts",
+      "default": "./packages/sdk/src/prover/mobile.ts"
     },
     "./stealth": {
-      "types": "./sdk/src/stealth/index.ts",
-      "import": "./sdk/src/stealth/index.ts",
-      "default": "./sdk/src/stealth/index.ts"
+      "types": "./packages/sdk/src/stealth/index.ts",
+      "import": "./packages/sdk/src/stealth/index.ts",
+      "default": "./packages/sdk/src/stealth/index.ts"
     },
     "./bitcoin": {
-      "types": "./sdk/src/bitcoin/index.ts",
-      "import": "./sdk/src/bitcoin/index.ts",
-      "default": "./sdk/src/bitcoin/index.ts"
+      "types": "./packages/sdk/src/bitcoin/index.ts",
+      "import": "./packages/sdk/src/bitcoin/index.ts",
+      "default": "./packages/sdk/src/bitcoin/index.ts"
     },
     "./solana": {
-      "types": "./sdk/src/solana/index.ts",
-      "import": "./sdk/src/solana/index.ts",
-      "default": "./sdk/src/solana/index.ts"
+      "types": "./packages/sdk/src/solana/index.ts",
+      "import": "./packages/sdk/src/solana/index.ts",
+      "default": "./packages/sdk/src/solana/index.ts"
     },
     "./watcher": {
-      "types": "./sdk/src/watcher/index.ts",
-      "import": "./sdk/src/watcher/index.ts",
-      "default": "./sdk/src/watcher/index.ts"
+      "types": "./packages/sdk/src/watcher/index.ts",
+      "import": "./packages/sdk/src/watcher/index.ts",
+      "default": "./packages/sdk/src/watcher/index.ts"
     },
     "./watcher/web": {
-      "types": "./sdk/src/watcher/web.ts",
-      "import": "./sdk/src/watcher/web.ts",
-      "default": "./sdk/src/watcher/web.ts"
+      "types": "./packages/sdk/src/watcher/web.ts",
+      "import": "./packages/sdk/src/watcher/web.ts",
+      "default": "./packages/sdk/src/watcher/web.ts"
     },
     "./watcher/native": {
-      "types": "./sdk/src/watcher/native.ts",
-      "import": "./sdk/src/watcher/native.ts",
-      "default": "./sdk/src/watcher/native.ts"
+      "types": "./packages/sdk/src/watcher/native.ts",
+      "import": "./packages/sdk/src/watcher/native.ts",
+      "default": "./packages/sdk/src/watcher/native.ts"
     },
     "./react": {
-      "types": "./sdk/src/react/index.ts",
-      "import": "./sdk/src/react/index.ts",
-      "default": "./sdk/src/react/index.ts"
+      "types": "./packages/sdk/src/react/index.ts",
+      "import": "./packages/sdk/src/react/index.ts",
+      "default": "./packages/sdk/src/react/index.ts"
     },
     "./sui": {
-      "types": "./sdk-sui/src/index.ts",
-      "import": "./sdk-sui/src/index.ts",
-      "default": "./sdk-sui/src/index.ts"
+      "types": "./packages/sdk-sui/src/index.ts",
+      "import": "./packages/sdk-sui/src/index.ts",
+      "default": "./packages/sdk-sui/src/index.ts"
     },
     "./btc-client": {
-      "types": "./btc-client/src/index.ts",
-      "import": "./btc-client/src/index.ts",
-      "default": "./btc-client/src/index.ts"
+      "types": "./packages/btc-client/src/index.ts",
+      "import": "./packages/btc-client/src/index.ts",
+      "default": "./packages/btc-client/src/index.ts"
     }
   },
   "scripts": {
-    "build": "cd sdk && bunx tsc",
-    "test": "cd sdk && bun install --ignore-scripts && bun test",
-    "prepare": "cd sdk && bunx tsc",
-    "copy-circuits": "cd sdk && bun run copy-circuits"
+    "build": "cd packages/sdk && bunx tsc",
+    "test": "cd packages/sdk && bun install --ignore-scripts && bun test",
+    "prepare": "cd packages/sdk && bunx tsc",
+    "copy-circuits": "cd packages/sdk && bun run copy-circuits"
   },
   "dependencies": {
     "@ika.xyz/sdk": "^0.4.1",

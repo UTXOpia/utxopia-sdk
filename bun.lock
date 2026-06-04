@@ -33,6 +33,53 @@
         "snarkjs",
       ],
     },
+    "packages/btc-client": {
+      "name": "@utxopia/btc-client",
+      "version": "0.0.0",
+    },
+    "packages/sdk": {
+      "name": "@utxopia/sdk",
+      "version": "2.0.2",
+      "dependencies": {
+        "@noble/ciphers": "^2.2.0",
+        "@noble/curves": "2.0.1",
+        "@noble/hashes": "1.8.0",
+        "@scure/base": "2.0.0",
+        "@scure/btc-signer": "2.0.1",
+        "@solana-program/system": "^0.10.0",
+        "@solana/kit": "^5.5.0",
+        "bech32": "^2.0.0",
+        "circomlibjs": "^0.1.7",
+        "poseidon-lite": "0.3.0",
+      },
+      "devDependencies": {
+        "@solana/web3.js": "^1.98.4",
+        "@types/node": "^20.10.0",
+        "@types/react": "^19",
+        "typescript": "^5.3.0",
+      },
+      "peerDependencies": {
+        "react": ">=17.0.0",
+        "snarkjs": "^0.7.5",
+      },
+      "optionalPeers": [
+        "react",
+        "snarkjs",
+      ],
+    },
+    "packages/sdk-core": {
+      "name": "@utxopia/sdk-core",
+      "version": "0.0.0",
+    },
+    "packages/sdk-sui": {
+      "name": "@utxopia/sdk-sui",
+      "version": "0.0.0",
+      "dependencies": {
+        "@ika.xyz/sdk": "^0.4.1",
+        "@mysten/sui": "^2.17.0",
+        "@utxopia/sdk-core": "workspace:*",
+      },
+    },
   },
   "packages": {
     "@0no-co/graphql.web": ["@0no-co/graphql.web@1.2.0", "", { "peerDependencies": { "graphql": "^14.0.0 || ^15.0.0 || ^16.0.0" }, "optionalPeers": ["graphql"] }, "sha512-/1iHy9TTr63gE1YcR5idjx8UREz1s0kFhydf3bBLCXyqjhkIc6igAzTOx3zPifCwFR87tsh/4Pa9cNts6d2otw=="],
@@ -230,6 +277,14 @@
     "@types/react": ["@types/react@19.2.16", "", { "dependencies": { "csstype": "^3.2.2" } }, "sha512-esJiCAnl0kfpNdE69f3So4WJUXy95dLZydX0KwK46riIHDzHM7O9Vtf9xCHW0PXIqvgqNrswl522kA/5yx+F4w=="],
 
     "@types/ws": ["@types/ws@7.4.7", "", { "dependencies": { "@types/node": "*" } }, "sha512-JQbbmxZTZehdc2iszGKs5oC3NFnjeay7mtAWrdt7qNtAVK0g19muApzAy4bm9byz79xa2ZnO/BOBC2R8RC5Lww=="],
+
+    "@utxopia/btc-client": ["@utxopia/btc-client@workspace:packages/btc-client"],
+
+    "@utxopia/sdk": ["@utxopia/sdk@workspace:packages/sdk"],
+
+    "@utxopia/sdk-core": ["@utxopia/sdk-core@workspace:packages/sdk-core"],
+
+    "@utxopia/sdk-sui": ["@utxopia/sdk-sui@workspace:packages/sdk-sui"],
 
     "aes-js": ["aes-js@3.0.0", "", {}, "sha512-H7wUZRn8WpTq9jocdxQ2c8x2sKo9ZVmzfRE13GiNJXfp7NcKYEdvl3vspKjXox6RIG2VtaRe4JFvxG4rqp2Zuw=="],
 
