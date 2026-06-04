@@ -35,9 +35,15 @@ export {
   // Hashing
   sha256Hash,
   x25519Ecdh,
+  ed25519GenerateKeyPair,
+  ed25519PubToX25519,
+  encryptAmountEd25519,
+  decryptAmountEd25519,
   // Low-level crypto (needed by E2E test scripts + contract deploy scripts)
   randomFieldElement,
   BN254_FIELD_PRIME,
+  babyJubMul,
+  BABYJUB_BASE8,
 } from "./crypto";
 
 // ==========================================================================
@@ -152,7 +158,14 @@ export {
 
 export {
   initPoseidon,
+  poseidonHash,
   poseidonHashSync,
+  computeUnifiedCommitment,
+  computeNullifier,
+  hashNullifier,
+  computeUnifiedCommitmentSync,
+  computeNullifierSync,
+  hashNullifierSync,
   // JoinSplit primitives (used by E2E scripts + pay-flow)
   computeMPKSync,
   computeNPKSync,
@@ -162,6 +175,11 @@ export {
   computeTokenId,
   reduceToField,
 } from "./poseidon";
+
+export {
+  DEMO_INSTRUCTION,
+  buildAddDemoStealthData,
+} from "./demo";
 
 // ==========================================================================
 // Token Registry (multi-token support)
