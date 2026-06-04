@@ -89,6 +89,9 @@ export function getCircuitPath(): string {
 
 // Lazy-loaded snarkjs module
 let snarkjs: any = null;
+const dynamicImport = new Function("specifier", "return import(specifier)") as (
+  specifier: string,
+) => Promise<any>;
 
 interface CircuitArtifact {
   wasmPath: string;
@@ -105,7 +108,7 @@ async function ensureSnarkjsLoaded(): Promise<void> {
   if (snarkjs) return;
 
   console.log("[Prover] Loading snarkjs module...");
-  snarkjs = await import("snarkjs").catch(() => null);
+  snarkjs = await dynamicImport("snarkjs").catch(() => null);
 
   if (!snarkjs) {
     throw new Error(
