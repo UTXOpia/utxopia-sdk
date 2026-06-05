@@ -275,7 +275,19 @@ export {
   buildMockBtcTransaction,
   buildDepositOpReturn,
   parseDepositOpReturn,
+  encodeDepositOpReturnHeader,
+  decodeDepositOpReturnHeader,
+  validateDepositOpReturnContext,
+  computeDepositPoolTag,
+  DEPOSIT_DESTINATION_CHAIN,
+  DEPOSIT_BITCOIN_NETWORK,
+  DEPOSIT_OP_RETURN_VERSION,
+  DEPOSIT_POOL_TAG_SIZE,
   DEPOSIT_OP_RETURN_SIZE,
+  type DepositDestinationChain,
+  type DepositBitcoinNetwork,
+  type DepositOpReturnContext,
+  type ParsedDepositOpReturn,
 } from "./taproot";
 
 // ==========================================================================

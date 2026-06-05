@@ -20,6 +20,7 @@
 import { initPoseidon, poseidonHashSync } from "./poseidon";
 import { computeTokenId, reduceToField } from "./poseidon";
 import { initConfig, getConfig, type NetworkConfig, type NetworkId } from "./config";
+import { getAddressEncoder } from "@solana/kit";
 import { parseMerkleProofResponse } from "./merkle";
 import { eddsaPoseidonSign } from "./keys";
 import {
@@ -53,6 +54,13 @@ import {
 import { selectUtxos, type UtxoDescriptor } from "./psbt";
 import { hexToBytes, bytesToHex, bigintToBytes } from "./crypto";
 import { EventClient } from "./event-client";
+import {
+  DEPOSIT_BITCOIN_NETWORK,
+  DEPOSIT_DESTINATION_CHAIN,
+  computeDepositPoolTag,
+  type DepositBitcoinNetwork,
+  type DepositOpReturnContext,
+} from "./taproot";
 
 // ─── Types ──────────────────────────────────────────────────────────
 
@@ -402,11 +410,13 @@ export class UTXOpiaClient {
   async prepareDeposit(opts: {
     recipient?: StealthMetaAddress;
     network?: "mainnet" | "testnet";
+    opReturnContext?: DepositOpReturnContext;
   } = {}): Promise<NonInteractiveDepositResult> {
     const meta = opts.recipient ?? this._stealthAddress;
     if (!meta) throw new Error("No recipient stealth address (login first or provide recipient)");
     const network = opts.network ?? (this.config.bitcoinNetwork === "mainnet" ? "mainnet" : "testnet");
-    return createDepositFromConfig(meta, network);
+    const opReturnContext = opts.opReturnContext ?? defaultSolanaDepositOpReturnContext(this.config);
+    return createDepositFromConfig(meta, network, opReturnContext);
   }
 
   /**
@@ -559,4 +569,25 @@ export class UTXOpiaClient {
     }
     return this._eventClient;
   }
+}
+
+function defaultSolanaDepositOpReturnContext(config: NetworkConfig): DepositOpReturnContext {
+  const encode = getAddressEncoder();
+  return {
+    destinationChain: DEPOSIT_DESTINATION_CHAIN.SOLANA,
+    bitcoinNetwork: sdkBitcoinNetworkToDepositNetwork(config.bitcoinNetwork),
+    poolTag: computeDepositPoolTag([
+      new TextEncoder().encode("UTXOPIA_SOL"),
+      new Uint8Array(encode.encode(config.utxopiaProgramId)),
+      new Uint8Array(encode.encode(config.poolStatePda)),
+      new Uint8Array(encode.encode(config.zkbtcMint)),
+    ]),
+  };
+}
+
+function sdkBitcoinNetworkToDepositNetwork(network: NetworkConfig["bitcoinNetwork"]): DepositBitcoinNetwork {
+  if (network === "mainnet") return DEPOSIT_BITCOIN_NETWORK.MAINNET;
+  if (network === "regtest") return DEPOSIT_BITCOIN_NETWORK.REGTEST;
+  if (network === "testnet4" || network === "testnet") return DEPOSIT_BITCOIN_NETWORK.TESTNET4;
+  throw new Error(`unsupported deposit Bitcoin network: ${network}`);
 }

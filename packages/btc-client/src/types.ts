@@ -87,6 +87,10 @@ export interface BitcoinDepositCandidate {
 }
 
 export interface UtxopiaDepositOpReturn {
+  version: number;
+  destinationChain: number;
+  bitcoinNetwork: number;
+  poolTag: Uint8Array;
   ephemeralPubkey: Uint8Array;
   npk: Uint8Array;
   rawPayload: Uint8Array;

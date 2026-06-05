@@ -4,7 +4,7 @@
  * Creates a Partially-Signed Bitcoin Transaction with:
  *   - Input(s): user's UTXOs (P2TR or P2WPKH)
  *   - Output 1: P2TR deposit (commitment-bound Taproot address)
- *   - Output 2: OP_RETURN (64 bytes: ephemeralPub || npk)
+ *   - Output 2: OP_RETURN (73 bytes: header || poolTag || ephemeralPub || npk)
  *   - Output 3: change back to user (if needed)
  *
  * Uses @scure/btc-signer for PSBT construction.
@@ -12,6 +12,7 @@
 
 import * as btc from "@scure/btc-signer";
 import { hex } from "@scure/base";
+import { DEPOSIT_OP_RETURN_SIZE } from "./taproot";
 
 // =============================================================================
 // Types
@@ -39,7 +40,7 @@ export interface BuildDepositPsbtParams {
   depositAddress: string;
   /** Deposit amount in satoshis */
   depositAmountSats: number;
-  /** 64-byte OP_RETURN payload (from buildDepositOpReturn) */
+  /** Compact deposit OP_RETURN payload (from buildDepositOpReturn) */
   opReturnPayload: Uint8Array;
   /** Change address (same type as sender) */
   changeAddress: string;
@@ -79,8 +80,8 @@ const P2WPKH_INPUT_VBYTES = 68;
 /** Estimated vbytes for P2TR output */
 const P2TR_OUTPUT_VBYTES = 43;
 
-/** Estimated vbytes for OP_RETURN output (with 64-byte payload) */
-const OP_RETURN_OUTPUT_VBYTES = 75; // 8 value + 1 script_len + 1 OP_RETURN + 1 push + 64 payload
+/** Estimated vbytes for OP_RETURN output (with compact deposit payload) */
+const OP_RETURN_OUTPUT_VBYTES = 84; // 8 value + 1 script_len + 1 OP_RETURN + 1 push + 73 payload
 
 /** Transaction overhead (version + locktime + segwit marker + input/output count) */
 const TX_OVERHEAD_VBYTES = 11;
@@ -137,8 +138,8 @@ export function buildDepositPsbt(params: BuildDepositPsbtParams): BuildDepositPs
   if (depositAmountSats < DUST_LIMIT) {
     throw new Error(`Deposit amount ${depositAmountSats} is below dust limit ${DUST_LIMIT}`);
   }
-  if (opReturnPayload.length !== 64) {
-    throw new Error(`OP_RETURN payload must be 64 bytes, got ${opReturnPayload.length}`);
+  if (opReturnPayload.length !== DEPOSIT_OP_RETURN_SIZE) {
+    throw new Error(`OP_RETURN payload must be ${DEPOSIT_OP_RETURN_SIZE} bytes, got ${opReturnPayload.length}`);
   }
 
   const btcNetwork = network === "mainnet" ? btc.NETWORK : btc.TEST_NETWORK;
@@ -202,9 +203,7 @@ export function buildDepositPsbt(params: BuildDepositPsbtParams): BuildDepositPs
   // Output 1: P2TR deposit
   tx.addOutputAddress(depositAddress, BigInt(depositAmountSats), btcNetwork);
 
-  // Output 2: OP_RETURN with 72-byte payload
-  // Build script: OP_RETURN (0x6a) + OP_PUSHDATA1 (0x4c) + length (0x48 = 72) + payload
-  // Actually for 72 bytes (> 75? No, 72 <= 75), use direct push opcode
+  // Output 2: OP_RETURN with compact deposit payload.
   const opReturnScript = new Uint8Array(2 + opReturnPayload.length);
   opReturnScript[0] = 0x6a; // OP_RETURN
   opReturnScript[1] = opReturnPayload.length; // push 72 bytes (72 = 0x48)

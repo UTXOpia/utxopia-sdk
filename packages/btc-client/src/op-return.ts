@@ -1,6 +1,12 @@
 import type { BitcoinTransaction, UtxopiaDepositOpReturn } from "./types";
 
-export const UTXOPIA_DEPOSIT_OP_RETURN_SIZE = 64;
+export const UTXOPIA_DEPOSIT_OP_RETURN_SIZE = 73;
+export const UTXOPIA_DEPOSIT_OP_RETURN_VERSION = 1;
+export const DESTINATION_CHAIN_SOLANA = 1;
+export const DESTINATION_CHAIN_SUI = 2;
+export const BITCOIN_NETWORK_MAINNET = 0;
+export const BITCOIN_NETWORK_TESTNET4 = 2;
+export const BITCOIN_NETWORK_REGTEST = 3;
 
 export function extractUtxopiaDepositOpReturn(
   tx: BitcoinTransaction | undefined,
@@ -15,14 +21,41 @@ export function extractUtxopiaDepositOpReturn(
       continue;
     }
 
+    const header = decodeDepositHeader(payload[0]);
+    if (!header) {
+      continue;
+    }
+
     return {
-      ephemeralPubkey: payload.slice(0, 32),
-      npk: payload.slice(32, 64),
+      ...header,
+      poolTag: payload.slice(1, 9),
+      ephemeralPubkey: payload.slice(9, 41),
+      npk: payload.slice(41, 73),
       rawPayload: payload,
     };
   }
 
   return undefined;
+}
+
+export function decodeDepositHeader(header: number): {
+  version: number;
+  destinationChain: number;
+  bitcoinNetwork: number;
+} | undefined {
+  const version = header >> 6;
+  const destinationChain = (header >> 4) & 0x03;
+  const bitcoinNetwork = header & 0x0f;
+  if (version !== UTXOPIA_DEPOSIT_OP_RETURN_VERSION) return undefined;
+  if (destinationChain !== DESTINATION_CHAIN_SOLANA && destinationChain !== DESTINATION_CHAIN_SUI) return undefined;
+  if (
+    bitcoinNetwork !== BITCOIN_NETWORK_MAINNET
+    && bitcoinNetwork !== BITCOIN_NETWORK_TESTNET4
+    && bitcoinNetwork !== BITCOIN_NETWORK_REGTEST
+  ) {
+    return undefined;
+  }
+  return { version, destinationChain, bitcoinNetwork };
 }
 
 export function parseOpReturnPayload(scriptPubkeyHex: string): Uint8Array | undefined {
@@ -57,4 +90,3 @@ export function hexToBytes(hex: string): Uint8Array {
   }
   return bytes;
 }
-

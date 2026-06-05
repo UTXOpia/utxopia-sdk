@@ -6,6 +6,7 @@
  * cryptographic binding between the BTC deposit and the claim.
  */
 
+import { sha256 } from "@noble/hashes/sha2.js";
 import { taggedHash, hexToBytes, bytesToHex } from "./crypto";
 import * as bech32 from "bech32";
 import { secp256k1 } from "@noble/curves/secp256k1.js";
@@ -234,15 +235,50 @@ function arraysEqual(a: Uint8Array, b: Uint8Array): boolean {
 
 // ========== OP_RETURN Helpers ==========
 
-/** OP_RETURN payload size for deposit: ephemeralPub (32) + npk (32) = 64 bytes */
-export const DEPOSIT_OP_RETURN_SIZE = 64;
+/** Destination chain encoded in the compact deposit OP_RETURN header. */
+export const DEPOSIT_DESTINATION_CHAIN = {
+  SOLANA: 1,
+  SUI: 2,
+} as const;
+
+export type DepositDestinationChain =
+  (typeof DEPOSIT_DESTINATION_CHAIN)[keyof typeof DEPOSIT_DESTINATION_CHAIN];
+
+/** Bitcoin network encoded in the compact deposit OP_RETURN header. */
+export const DEPOSIT_BITCOIN_NETWORK = {
+  MAINNET: 0,
+  TESTNET4: 2,
+  REGTEST: 3,
+} as const;
+
+export type DepositBitcoinNetwork =
+  (typeof DEPOSIT_BITCOIN_NETWORK)[keyof typeof DEPOSIT_BITCOIN_NETWORK];
+
+export const DEPOSIT_OP_RETURN_VERSION = 1;
+export const DEPOSIT_POOL_TAG_SIZE = 8;
+/** OP_RETURN payload size for deposit: header(1) + poolTag(8) + ephemeralPub(32) + npk(32). */
+export const DEPOSIT_OP_RETURN_SIZE = 73;
+
+export interface DepositOpReturnContext {
+  destinationChain: DepositDestinationChain;
+  bitcoinNetwork: DepositBitcoinNetwork;
+  poolTag: Uint8Array;
+}
+
+export interface ParsedDepositOpReturn extends DepositOpReturnContext {
+  version: number;
+  ephemeralPub: Uint8Array;
+  npk: Uint8Array;
+}
 
 /**
- * Build a 64-byte OP_RETURN payload for non-interactive stealth deposits.
+ * Build the compact deposit OP_RETURN payload for non-interactive stealth deposits.
  *
  * Layout:
- *   [0..32)  ephemeralPub     — Ed25519 public key
- *   [32..64) npk              — Note public key (Poseidon hash)
+ *   [0]      header           — version + destination chain + Bitcoin network
+ *   [1..9)   poolTag          — destination deployment tag
+ *   [9..41)  ephemeralPub     — Ed25519 public key
+ *   [41..73) npk              — Note public key (Poseidon hash)
  *
  * Amount is no longer embedded — the on-chain program reads it from the BTC output.
  * The caller wraps this in an OP_RETURN script (0x6a + push opcode + payload).
@@ -250,31 +286,97 @@ export const DEPOSIT_OP_RETURN_SIZE = 64;
 export function buildDepositOpReturn(
   ephemeralPub: Uint8Array,
   npk: Uint8Array,
+  context: DepositOpReturnContext,
 ): Uint8Array {
   if (ephemeralPub.length !== 32) throw new Error("ephemeralPub must be 32 bytes");
   if (npk.length !== 32) throw new Error("npk must be 32 bytes");
+  validateDepositOpReturnContext(context);
 
   const payload = new Uint8Array(DEPOSIT_OP_RETURN_SIZE);
-  payload.set(ephemeralPub, 0);
-  payload.set(npk, 32);
+  payload[0] = encodeDepositOpReturnHeader(context.destinationChain, context.bitcoinNetwork);
+  payload.set(context.poolTag, 1);
+  payload.set(ephemeralPub, 1 + DEPOSIT_POOL_TAG_SIZE);
+  payload.set(npk, 1 + DEPOSIT_POOL_TAG_SIZE + 32);
   return payload;
 }
 
 /**
- * Parse a 64-byte OP_RETURN payload back into its constituent fields.
+ * Parse the compact deposit OP_RETURN payload back into its constituent fields.
  *
- * @returns Parsed fields, or null if data is not exactly 64 bytes.
+ * @returns Parsed fields, or null if data is not exactly the expected size.
  */
-export function parseDepositOpReturn(data: Uint8Array): {
-  ephemeralPub: Uint8Array;
-  npk: Uint8Array;
-} | null {
+export function parseDepositOpReturn(data: Uint8Array): ParsedDepositOpReturn | null {
   if (data.length !== DEPOSIT_OP_RETURN_SIZE) return null;
+  const header = decodeDepositOpReturnHeader(data[0]);
+  if (!header) return null;
 
   return {
-    ephemeralPub: data.slice(0, 32),
-    npk: data.slice(32, 64),
+    ...header,
+    poolTag: data.slice(1, 1 + DEPOSIT_POOL_TAG_SIZE),
+    ephemeralPub: data.slice(1 + DEPOSIT_POOL_TAG_SIZE, 1 + DEPOSIT_POOL_TAG_SIZE + 32),
+    npk: data.slice(1 + DEPOSIT_POOL_TAG_SIZE + 32, DEPOSIT_OP_RETURN_SIZE),
   };
+}
+
+export function encodeDepositOpReturnHeader(
+  destinationChain: DepositDestinationChain,
+  bitcoinNetwork: DepositBitcoinNetwork,
+): number {
+  if (destinationChain !== DEPOSIT_DESTINATION_CHAIN.SOLANA && destinationChain !== DEPOSIT_DESTINATION_CHAIN.SUI) {
+    throw new Error("invalid deposit destination chain");
+  }
+  if (
+    bitcoinNetwork !== DEPOSIT_BITCOIN_NETWORK.MAINNET
+    && bitcoinNetwork !== DEPOSIT_BITCOIN_NETWORK.TESTNET4
+    && bitcoinNetwork !== DEPOSIT_BITCOIN_NETWORK.REGTEST
+  ) {
+    throw new Error("invalid deposit bitcoin network");
+  }
+  return (DEPOSIT_OP_RETURN_VERSION << 6) | (destinationChain << 4) | bitcoinNetwork;
+}
+
+export function decodeDepositOpReturnHeader(header: number): {
+  version: number;
+  destinationChain: DepositDestinationChain;
+  bitcoinNetwork: DepositBitcoinNetwork;
+} | null {
+  const version = header >> 6;
+  const destinationChain = (header >> 4) & 0x03;
+  const bitcoinNetwork = header & 0x0f;
+  if (version !== DEPOSIT_OP_RETURN_VERSION) return null;
+  if (destinationChain !== DEPOSIT_DESTINATION_CHAIN.SOLANA && destinationChain !== DEPOSIT_DESTINATION_CHAIN.SUI) {
+    return null;
+  }
+  if (
+    bitcoinNetwork !== DEPOSIT_BITCOIN_NETWORK.MAINNET
+    && bitcoinNetwork !== DEPOSIT_BITCOIN_NETWORK.TESTNET4
+    && bitcoinNetwork !== DEPOSIT_BITCOIN_NETWORK.REGTEST
+  ) {
+    return null;
+  }
+  return {
+    version,
+    destinationChain: destinationChain as DepositDestinationChain,
+    bitcoinNetwork: bitcoinNetwork as DepositBitcoinNetwork,
+  };
+}
+
+export function validateDepositOpReturnContext(context: DepositOpReturnContext): void {
+  encodeDepositOpReturnHeader(context.destinationChain, context.bitcoinNetwork);
+  if (context.poolTag.length !== DEPOSIT_POOL_TAG_SIZE) {
+    throw new Error(`poolTag must be ${DEPOSIT_POOL_TAG_SIZE} bytes`);
+  }
+}
+
+export function computeDepositPoolTag(parts: Uint8Array[]): Uint8Array {
+  const total = parts.reduce((sum, part) => sum + part.length, 0);
+  const bytes = new Uint8Array(total);
+  let offset = 0;
+  for (const part of parts) {
+    bytes.set(part, offset);
+    offset += part.length;
+  }
+  return sha256(bytes).slice(0, DEPOSIT_POOL_TAG_SIZE);
 }
 
 /**

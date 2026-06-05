@@ -76,6 +76,7 @@ import {
 } from "./poseidon";
 import { getConfig } from "./config";
 import { deriveRawXOnlyP2TRAddress } from "./bitcoin/ika";
+import type { DepositOpReturnContext } from "./taproot";
 
 // ========== Amount Encryption Helpers ==========
 
@@ -345,7 +346,7 @@ export interface NonInteractiveDepositResult {
   btcAddress: string;
   /** 32-byte x-only output key for the deposit P2TR output */
   depositOutputKey: Uint8Array;
-  /** 64-byte OP_RETURN payload (ephemeralPub || npk) */
+  /** 73-byte OP_RETURN payload: header || poolTag || ephemeralPub || npk */
   opReturnPayload: Uint8Array;
   /** 32-byte note public key (for tracking) */
   npk: Uint8Array;
@@ -389,19 +390,25 @@ export async function createNonInteractiveDeposit(
   groupPubKey: Uint8Array,
   network?: "mainnet" | "testnet" | "regtest",
   userRefundPubkey?: undefined,
+  opReturnContext?: DepositOpReturnContext,
 ): Promise<NonInteractiveDepositResult>;
 export async function createNonInteractiveDeposit(
   recipientMeta: StealthMetaAddress,
   groupPubKey: Uint8Array,
   network: "mainnet" | "testnet" | "regtest",
   userRefundPubkey: Uint8Array,
+  opReturnContext: DepositOpReturnContext,
 ): Promise<NonInteractiveDepositWithRefundResult>;
 export async function createNonInteractiveDeposit(
   recipientMeta: StealthMetaAddress,
   groupPubKey: Uint8Array,
   network: "mainnet" | "testnet" | "regtest" = "testnet",
   userRefundPubkey?: Uint8Array,
+  opReturnContext?: DepositOpReturnContext,
 ): Promise<NonInteractiveDepositResult | NonInteractiveDepositWithRefundResult> {
+  if (!opReturnContext) {
+    throw new Error("deposit OP_RETURN context is required");
+  }
   // Only viewingPubKey + mpk needed (spendingPubKey not used by sender)
   const viewingPubKey = new Uint8Array(recipientMeta.viewingPubKey);
 
@@ -431,7 +438,7 @@ export async function createNonInteractiveDeposit(
     } = deriveTaprootAddressWithRefund(npk, userRefundPubkey, groupPubKey, network);
 
     // Still build OP_RETURN so the backend can detect the deposit
-    const opReturnPayload = buildDepositOpReturn(ephemeralPub, npk);
+    const opReturnPayload = buildDepositOpReturn(ephemeralPub, npk, opReturnContext);
 
     return {
       btcAddress,
@@ -449,8 +456,7 @@ export async function createNonInteractiveDeposit(
   const { deriveTaprootAddress, buildDepositOpReturn } = await import("./taproot");
   const { address: btcAddress, outputKey } = deriveTaprootAddress(npk, network, groupPubKey);
 
-  // Build 64-byte OP_RETURN payload (ephemeralPub || npk)
-  const opReturnPayload = buildDepositOpReturn(ephemeralPub, npk);
+  const opReturnPayload = buildDepositOpReturn(ephemeralPub, npk, opReturnContext);
 
   return {
     btcAddress,
@@ -466,13 +472,17 @@ export async function createNonInteractiveDeposit(
  *
  * The BTC address is the raw Ika x-only Taproot witness program, so Ika can
  * later sign and spend the UTXO. Privacy/ownership metadata stays per-deposit
- * in OP_RETURN(ephemeralPub || npk), and Solana credits the note from that tx.
+ * in OP_RETURN(header || poolTag || ephemeralPub || npk), and Solana credits the note from that tx.
  */
 export async function createDirectVaultDeposit(
   recipientMeta: StealthMetaAddress,
   vaultXOnlyPubkey: Uint8Array,
   network: "mainnet" | "testnet" | "regtest" = "testnet",
+  opReturnContext?: DepositOpReturnContext,
 ): Promise<NonInteractiveDepositResult> {
+  if (!opReturnContext) {
+    throw new Error("deposit OP_RETURN context is required");
+  }
   if (vaultXOnlyPubkey.length !== 32) {
     throw new Error("vaultXOnlyPubkey must be 32 bytes");
   }
@@ -487,7 +497,7 @@ export async function createDirectVaultDeposit(
   const ephemeralPub = new Uint8Array(ephemeral.pubKey);
 
   const { buildDepositOpReturn } = await import("./taproot");
-  const opReturnPayload = buildDepositOpReturn(ephemeralPub, npk);
+  const opReturnPayload = buildDepositOpReturn(ephemeralPub, npk, opReturnContext);
 
   return {
     btcAddress: deriveRawXOnlyP2TRAddress(vaultXOnlyPubkey, network),
@@ -504,13 +514,14 @@ export async function createDirectVaultDeposit(
  * Direct-vault/Ika deposit helper.
  *
  * Deposits go to the raw Ika x-only P2TR vault address. Recipient binding
- * stays per-deposit in OP_RETURN(ephemeralPub || npk), and Solana credits the
+ * stays per-deposit in OP_RETURN(header || poolTag || ephemeralPub || npk), and Solana credits the
  * note by SPV-verifying that deposit transaction directly. Legacy sweep-mode
  * address derivation is intentionally not selected from config anymore.
  */
 export async function createDepositFromConfig(
   recipientMeta: StealthMetaAddress,
   network: "mainnet" | "testnet" | "regtest" = "testnet",
+  opReturnContext?: DepositOpReturnContext,
 ): Promise<NonInteractiveDepositResult> {
   const config = getConfig();
   const ikaKey = pickIkaCustodyKey(config);
@@ -520,7 +531,7 @@ export async function createDepositFromConfig(
   if (config.depositMode && !isDirectVaultDepositMode(config.depositMode)) {
     throw new Error(`Unsupported depositMode "${config.depositMode}"; only Ika direct-vault deposits are supported`);
   }
-  return createDirectVaultDeposit(recipientMeta, ikaKey, network);
+  return createDirectVaultDeposit(recipientMeta, ikaKey, network, opReturnContext);
 }
 
 export function isDirectVaultDepositMode(mode?: string): boolean {

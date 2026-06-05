@@ -6,12 +6,14 @@ import {
   buildDepositOpReturn,
   parseDepositOpReturn,
   buildMockBtcTransaction,
+  DEPOSIT_BITCOIN_NETWORK,
+  DEPOSIT_DESTINATION_CHAIN,
   DEPOSIT_OP_RETURN_SIZE,
 } from "../../src/taproot";
 
 describe("DEPOSIT_OP_RETURN_SIZE", () => {
-  it("should equal 64", () => {
-    expect(DEPOSIT_OP_RETURN_SIZE).toBe(64);
+  it("should equal compact deposit payload size", () => {
+    expect(DEPOSIT_OP_RETURN_SIZE).toBe(73);
   });
 });
 
@@ -129,37 +131,49 @@ describe("createOpReturnScript / parseOpReturnCommitment roundtrip", () => {
 });
 
 describe("buildDepositOpReturn / parseDepositOpReturn roundtrip", () => {
-  it("builds and parses a 64-byte payload", () => {
+  const context = {
+    destinationChain: DEPOSIT_DESTINATION_CHAIN.SOLANA,
+    bitcoinNetwork: DEPOSIT_BITCOIN_NETWORK.REGTEST,
+    poolTag: new Uint8Array(8).fill(0xcc),
+  };
+
+  it("builds and parses a compact deposit payload", () => {
     const ephemeralPub = new Uint8Array(32).fill(0x11);
     const npk = new Uint8Array(32).fill(0x22);
 
-    const payload = buildDepositOpReturn(ephemeralPub, npk);
+    const payload = buildDepositOpReturn(ephemeralPub, npk, context);
 
-    expect(payload.length).toBe(64);
-    expect(payload.slice(0, 32)).toEqual(ephemeralPub);
-    expect(payload.slice(32, 64)).toEqual(npk);
+    expect(payload.length).toBe(DEPOSIT_OP_RETURN_SIZE);
+    expect(payload[0]).toBe(0x53);
+    expect(payload.slice(1, 9)).toEqual(context.poolTag);
+    expect(payload.slice(9, 41)).toEqual(ephemeralPub);
+    expect(payload.slice(41, 73)).toEqual(npk);
 
     const parsed = parseDepositOpReturn(payload);
     expect(parsed).not.toBeNull();
+    expect(parsed!.version).toBe(1);
+    expect(parsed!.destinationChain).toBe(DEPOSIT_DESTINATION_CHAIN.SOLANA);
+    expect(parsed!.bitcoinNetwork).toBe(DEPOSIT_BITCOIN_NETWORK.REGTEST);
+    expect(parsed!.poolTag).toEqual(context.poolTag);
     expect(parsed!.ephemeralPub).toEqual(ephemeralPub);
     expect(parsed!.npk).toEqual(npk);
   });
 
   it("rejects wrong-size ephemeralPub", () => {
     expect(() =>
-      buildDepositOpReturn(new Uint8Array(16), new Uint8Array(32)),
+      buildDepositOpReturn(new Uint8Array(16), new Uint8Array(32), context),
     ).toThrow("ephemeralPub must be 32 bytes");
   });
 
   it("rejects wrong-size npk", () => {
     expect(() =>
-      buildDepositOpReturn(new Uint8Array(32), new Uint8Array(16)),
+      buildDepositOpReturn(new Uint8Array(32), new Uint8Array(16), context),
     ).toThrow("npk must be 32 bytes");
   });
 
   it("parseDepositOpReturn returns null for wrong length", () => {
-    expect(parseDepositOpReturn(new Uint8Array(63))).toBeNull();
-    expect(parseDepositOpReturn(new Uint8Array(65))).toBeNull();
+    expect(parseDepositOpReturn(new Uint8Array(DEPOSIT_OP_RETURN_SIZE - 1))).toBeNull();
+    expect(parseDepositOpReturn(new Uint8Array(DEPOSIT_OP_RETURN_SIZE + 1))).toBeNull();
   });
 });
 
