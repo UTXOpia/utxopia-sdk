@@ -515,7 +515,7 @@ export class UTXOpiaClient {
    * Submit a JoinSplit transaction to the relay backend.
    *
    * @param payload - Transaction data including proof, nullifiers, commitments, and mode-specific fields
-   * @param relayUrl - URL for the relay endpoint (default: "/api/relay")
+   * @param relayUrl - URL for the relay endpoint (default: "/api/sol/relay")
    */
   async submitToRelay(
     payload: {
@@ -546,7 +546,7 @@ export class UTXOpiaClient {
       btcScripts?: string[];
       requestNonces?: string[];
     },
-    relayUrl = "/api/relay",
+    relayUrl = "/api/sol/relay",
   ): Promise<{ success: boolean; signature?: string; error?: string }> {
     const resp = await fetch(relayUrl, {
       method: "POST",
