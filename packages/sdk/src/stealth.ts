@@ -472,7 +472,8 @@ export async function createNonInteractiveDeposit(
  *
  * The BTC address is the raw Ika x-only Taproot witness program, so Ika can
  * later sign and spend the UTXO. Privacy/ownership metadata stays per-deposit
- * in OP_RETURN(header || poolTag || ephemeralPub || npk), and Solana credits the note from that tx.
+ * in OP_RETURN(header || poolTag || ephemeralPub || npk), and the destination chain
+ * credits the note from that transaction.
  */
 export async function createDirectVaultDeposit(
   recipientMeta: StealthMetaAddress,
@@ -514,8 +515,8 @@ export async function createDirectVaultDeposit(
  * Direct-vault/Ika deposit helper.
  *
  * Deposits go to the raw Ika x-only P2TR vault address. Recipient binding
- * stays per-deposit in OP_RETURN(header || poolTag || ephemeralPub || npk), and Solana credits the
- * note by SPV-verifying that deposit transaction directly. Legacy sweep-mode
+ * stays per-deposit in OP_RETURN(header || poolTag || ephemeralPub || npk), and the destination chain
+ * credits the note by SPV-verifying that deposit transaction directly. Legacy sweep-mode
  * address derivation is intentionally not selected from config anymore.
  */
 export async function createDepositFromConfig(

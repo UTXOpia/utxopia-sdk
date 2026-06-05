@@ -1,7 +1,7 @@
 {
   "name": "@utxopia/sdk",
   "version": "2.0.2",
-  "description": "UTXOpia SDK - Private Bitcoin on Solana",
+  "description": "UTXOpia SDK - Private Bitcoin across Solana and Sui",
   "type": "module",
   "main": "dist/index.js",
   "module": "dist/index.js",

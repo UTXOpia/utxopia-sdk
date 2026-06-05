@@ -2,9 +2,9 @@
  * UTXOpia SDK v3.0 (JoinSplit Architecture)
  *
  * Complete client library for interacting with the UTXOpia protocol.
- * Private Bitcoin on Solana using ZK proofs.
+ * Private Bitcoin using ZK proofs.
  *
- * Networks: Solana Devnet + Bitcoin Testnet3
+ * Networks: Solana/Sui deployments + Bitcoin testnet4/regtest/mainnet
  *
  * ## Quick Start
  * ```typescript
