@@ -596,7 +596,7 @@ export class UTXOpiaSuiAdapter implements UTXOpiaChainAdapter {
       chain: this.chain,
       digest: result.digest,
       confirmed: status === "success",
-      checkpoint: result.checkpoint,
+      checkpoint: result.checkpoint ?? undefined,
       eventCursor: result.events?.at(-1)?.id?.eventSeq,
     };
   }
