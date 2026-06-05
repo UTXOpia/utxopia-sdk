@@ -105,7 +105,8 @@ async function ensureSnarkjsLoaded(): Promise<void> {
   if (snarkjs) return;
 
   console.log("[Prover] Loading snarkjs module...");
-  snarkjs = await import("snarkjs").catch(() => null);
+  const snarkjsModule = "snarkjs";
+  snarkjs = await import(snarkjsModule).catch(() => null);
 
   if (!snarkjs) {
     throw new Error(
