@@ -41,12 +41,14 @@ export interface ShieldInput {
 }
 
 export interface TransactInput {
-  inputNotes: Note[];
-  outputs: Array<{
+  inputNotes?: Note[];
+  outputs?: Array<{
     recipient: string;
     tokenId: string;
     amount: bigint;
   }>;
+  nInputs?: number;
+  nOutputs?: number;
   proof: Uint8Array;
   boundParamsHash: string;
   vkHash?: Uint8Array;
@@ -57,10 +59,12 @@ export interface TransactInput {
 }
 
 export interface RedemptionInput {
-  inputNotes: Note[];
-  btcAddress: string;
-  amountSats: bigint;
-  maxFeeSats: bigint;
+  inputNotes?: Note[];
+  btcAddress?: string;
+  amountSats?: bigint;
+  maxFeeSats?: bigint;
+  nInputs?: number;
+  nOutputs?: number;
   proof: Uint8Array;
   vkHash?: Uint8Array;
   publicInputs?: Uint8Array;

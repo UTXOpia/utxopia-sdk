@@ -182,10 +182,18 @@ export class UTXOpiaSuiAdapter implements UTXOpiaChainAdapter {
     }
 
     const tx = new Transaction();
-    const nullifiers = input.nullifiers ?? input.inputNotes
+    const nullifiers = input.nullifiers ?? (input.inputNotes ?? [])
       .map((note) => note.nullifier)
       .filter((nullifier): nullifier is string => Boolean(nullifier))
       .map(bytesFromHexOrUtf8);
+    const nInputs = input.nInputs ?? input.inputNotes?.length ?? nullifiers.length;
+    const nOutputs = input.nOutputs ?? input.outputs?.length ?? input.commitmentsOut.length;
+    if (nullifiers.length !== nInputs) {
+      throw new Error("Sui transact nullifier count must match nInputs");
+    }
+    if (input.commitmentsOut.length !== nOutputs) {
+      throw new Error("Sui transact commitment count must match nOutputs");
+    }
     const nullifierBytes = nullifiers.map((bytes) => Array.from(bytes));
     const commitmentBytes = input.commitmentsOut.map((bytes) => Array.from(bytes));
 
@@ -211,8 +219,8 @@ export class UTXOpiaSuiAdapter implements UTXOpiaChainAdapter {
           this.config.verifyingKeyRegistryInitialSharedVersion,
           false,
         ),
-        tx.pure.u8(input.inputNotes.length),
-        tx.pure.u8(input.outputs.length),
+        tx.pure.u8(nInputs),
+        tx.pure.u8(nOutputs),
         tx.pure.vector("u8", input.vkHash),
         tx.pure.vector("u8", input.publicInputs),
         tx.pure.vector("u8", input.proofPoints),
@@ -247,18 +255,31 @@ export class UTXOpiaSuiAdapter implements UTXOpiaChainAdapter {
     }
 
     const tx = new Transaction();
-    const nullifiers = input.nullifiers ?? input.inputNotes
+    const nullifiers = input.nullifiers ?? (input.inputNotes ?? [])
       .map((note) => note.nullifier)
       .filter((nullifier): nullifier is string => Boolean(nullifier))
       .map(bytesFromHexOrUtf8);
-    const btcScripts = input.btcScripts ?? [bytesFromHexOrUtf8(input.btcAddress)];
-    const amountsSats = input.amountsSats ?? [input.amountSats];
-    const maxFeesSats = input.maxFeesSats ?? [input.maxFeeSats];
+    const nInputs = input.nInputs ?? input.inputNotes?.length ?? nullifiers.length;
+    if (nullifiers.length !== nInputs) {
+      throw new Error("Sui redemption nullifier count must match nInputs");
+    }
+    const btcScripts = input.btcScripts ?? [
+      bytesFromHexOrUtf8(requiredValue(input.btcAddress, "btcAddress")),
+    ];
+    const amountsSats = input.amountsSats ?? [requiredValue(input.amountSats, "amountSats")];
+    const maxFeesSats = input.maxFeesSats ?? [requiredValue(input.maxFeeSats, "maxFeeSats")];
     const nPublicOutputs = input.nPublicOutputs ?? btcScripts.length;
-    const nOutputs = input.commitmentsOut.length;
+    const nOutputs = input.nOutputs ?? input.commitmentsOut.length;
     const stealthData = input.stealthData ?? [];
 
-    if (nPublicOutputs !== btcScripts.length || nPublicOutputs !== amountsSats.length || nPublicOutputs !== maxFeesSats.length) {
+    if (input.commitmentsOut.length !== nOutputs) {
+      throw new Error("Sui redemption commitment count must match nOutputs");
+    }
+    if (
+      nPublicOutputs !== btcScripts.length
+      || nPublicOutputs !== amountsSats.length
+      || nPublicOutputs !== maxFeesSats.length
+    ) {
       throw new Error("Sui redemption public output count must match btcScripts, amountsSats, and maxFeesSats");
     }
     if (stealthData.length !== nOutputs - nPublicOutputs) {
@@ -293,7 +314,7 @@ export class UTXOpiaSuiAdapter implements UTXOpiaChainAdapter {
           this.config.redemptionQueueInitialSharedVersion,
           true,
         ),
-        tx.pure.u8(input.inputNotes.length),
+        tx.pure.u8(nInputs),
         tx.pure.u8(nOutputs),
         tx.pure.u8(nPublicOutputs),
         tx.pure.vector("u8", input.vkHash),
@@ -661,4 +682,11 @@ function bytesFromHexOrUtf8(value: string): Uint8Array {
   }
 
   return new TextEncoder().encode(value);
+}
+
+function requiredValue<T>(value: T | undefined, name: string): T {
+  if (value === undefined) {
+    throw new Error(`Sui redemption requires ${name} when explicit arrays are not provided`);
+  }
+  return value;
 }

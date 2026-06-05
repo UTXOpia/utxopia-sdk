@@ -131,6 +131,37 @@ test("builds transact PTB transaction-kind bytes offline", async () => {
   expect(tx.bytes.length).toBeGreaterThan(0);
 });
 
+test("builds transact PTB from explicit proof relay payload without placeholder notes", async () => {
+  const tx = await adapter().buildTransactTransaction({
+    nInputs: 1,
+    nOutputs: 1,
+    proof: new Uint8Array(),
+    boundParamsHash: "33".repeat(32),
+    vkHash: new Uint8Array(32).fill(4),
+    publicInputs: new Uint8Array(32 * 4).fill(5),
+    proofPoints: new Uint8Array(128).fill(6),
+    nullifiers: [new Uint8Array(32).fill(8)],
+    commitmentsOut: [new Uint8Array(32).fill(7)],
+  });
+
+  expect(tx.kind).toBe("sui-programmable-transaction-block");
+  expect(tx.bytes.length).toBeGreaterThan(0);
+});
+
+test("rejects explicit transact payload with mismatched nullifier count", async () => {
+  await expect(adapter().buildTransactTransaction({
+    nInputs: 2,
+    nOutputs: 1,
+    proof: new Uint8Array(),
+    boundParamsHash: "33".repeat(32),
+    vkHash: new Uint8Array(32).fill(4),
+    publicInputs: new Uint8Array(32 * 5).fill(5),
+    proofPoints: new Uint8Array(128).fill(6),
+    nullifiers: [new Uint8Array(32).fill(8)],
+    commitmentsOut: [new Uint8Array(32).fill(7)],
+  })).rejects.toThrow("nullifier count");
+});
+
 test("builds redemption PTB transaction-kind bytes offline", async () => {
   const tx = await adapter().buildRedemptionTransaction({
     inputNotes: [],
@@ -142,6 +173,27 @@ test("builds redemption PTB transaction-kind bytes offline", async () => {
     publicInputs: new Uint8Array(32 * 3).fill(5),
     proofPoints: new Uint8Array(128).fill(6),
     commitmentsOut: [new Uint8Array(32).fill(7)],
+  });
+
+  expect(tx.kind).toBe("sui-programmable-transaction-block");
+  expect(tx.bytes.length).toBeGreaterThan(0);
+});
+
+test("builds redemption PTB from explicit proof relay payload without placeholder notes", async () => {
+  const tx = await adapter().buildRedemptionTransaction({
+    nInputs: 1,
+    nOutputs: 1,
+    nPublicOutputs: 1,
+    proof: new Uint8Array(),
+    vkHash: new Uint8Array(32).fill(4),
+    publicInputs: new Uint8Array(32 * 4).fill(5),
+    proofPoints: new Uint8Array(128).fill(6),
+    nullifiers: [new Uint8Array(32).fill(8)],
+    commitmentsOut: [new Uint8Array(32).fill(7)],
+    btcScripts: [new Uint8Array([0x51, 0x20, ...Array(32).fill(0x22)])],
+    amountsSats: [50_000n],
+    maxFeesSats: [2_000n],
+    stealthData: [],
   });
 
   expect(tx.kind).toBe("sui-programmable-transaction-block");
