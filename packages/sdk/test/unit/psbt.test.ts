@@ -13,27 +13,27 @@ function makeUtxo(value: number, label: string = "a"): UtxoDescriptor {
 
 describe("estimateDepositFee", () => {
   it("computes fee for 1 P2TR input with change", () => {
-    // TX_OVERHEAD(11) + 1*P2TR_INPUT(58) + P2TR_OUTPUT(43) + OP_RETURN_OUTPUT(75) + CHANGE_OUTPUT(43) = 230
+    // TX_OVERHEAD(11) + 1*P2TR_INPUT(58) + P2TR_OUTPUT(43) + OP_RETURN_OUTPUT(84) + CHANGE_OUTPUT(43) = 239
     const fee = estimateDepositFee(1, 1, "p2tr", true);
-    expect(fee).toBe(230);
+    expect(fee).toBe(239);
   });
 
   it("computes fee for 1 P2TR input without change", () => {
-    // TX_OVERHEAD(11) + 1*58 + 43 + 75 = 187
+    // TX_OVERHEAD(11) + 1*58 + 43 + 84 = 196
     const fee = estimateDepositFee(1, 1, "p2tr", false);
-    expect(fee).toBe(187);
+    expect(fee).toBe(196);
   });
 
   it("computes fee for 2 P2TR inputs with change", () => {
-    // 11 + 2*58 + 43 + 75 + 43 = 288
+    // 11 + 2*58 + 43 + 84 + 43 = 297
     const fee = estimateDepositFee(2, 1, "p2tr", true);
-    expect(fee).toBe(288);
+    expect(fee).toBe(297);
   });
 
   it("computes fee for 1 P2WPKH input with change", () => {
-    // 11 + 1*68 + 43 + 75 + 43 = 240
+    // 11 + 1*68 + 43 + 84 + 43 = 249
     const fee = estimateDepositFee(1, 1, "p2wpkh", true);
-    expect(fee).toBe(240);
+    expect(fee).toBe(249);
   });
 
   it("scales linearly with feeRate", () => {
@@ -50,8 +50,8 @@ describe("estimateDepositFee", () => {
 
   it("rounds up with fractional feeRate", () => {
     const fee = estimateDepositFee(1, 1.5, "p2tr", true);
-    // 230 * 1.5 = 345
-    expect(fee).toBe(345);
+    // 239 * 1.5 = 358.5
+    expect(fee).toBe(359);
   });
 });
 

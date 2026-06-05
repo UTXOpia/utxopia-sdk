@@ -395,7 +395,7 @@ setConfig('devnet');  // or 'localnet', 'mainnet'
 | Constant | Value | Description |
 |----------|-------|-------------|
 | `ZKBTC_TOKEN_ID` | `0x7a627463n` | "zkbtc" as u32, used in commitment computation |
-| `DEPOSIT_OP_RETURN_SIZE` | `64` | OP_RETURN payload: ephemeralPub (32) + npk (32) |
+| `DEPOSIT_OP_RETURN_SIZE` | `73` | Compact deposit OP_RETURN: header (1) + poolTag (8) + ephemeralPub (32) + npk (32) |
 | `TREE_DEPTH` | `16` | Merkle tree depth (65,536 leaves max) |
 
 ---
