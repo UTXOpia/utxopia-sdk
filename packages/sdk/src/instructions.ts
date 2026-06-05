@@ -655,7 +655,7 @@ export function buildTransactInstruction(options: TransactInstructionOptions): I
 export function buildRedeemInstructionData(options: {
   nInputs: number;
   nOutputs: number;
-  /** Number of public (redeem) outputs. Defaults to 1 for backward compat. */
+  /** Number of public (redeem) outputs. Defaults to redeemAmounts.length. */
   nPublicOutputs?: number;
   /** Groth16 proof (256 bytes). Omit when using buffer mode. */
   proofBytes?: Uint8Array;
@@ -1273,7 +1273,7 @@ export function buildVerifyTransactionInstructionData(params: {
 }
 
 // =============================================================================
-// UTXOpia Verify Stealth Deposit (disc=11)
+// UTXOpia Complete Deposit (disc=11)
 // =============================================================================
 
 /**
@@ -1285,7 +1285,7 @@ export function buildVerifyTransactionInstructionData(params: {
  * Layout: disc(1) + sweep_txid(32) + block_height(u64 LE)
  *         + sweep_tx_size(u32 LE) + deposit_tx_size(u32 LE) + deposit_txid(32) = 81 bytes
  */
-export function buildVerifyStealthDepositInstructionData(params: {
+export function buildCompleteDepositInstructionData(params: {
   sweepTxid: Uint8Array;      // 32 bytes, internal byte order
   blockHeight: number;
   sweepTxSize: number;

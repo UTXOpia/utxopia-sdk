@@ -68,7 +68,7 @@ export interface ApiClientConfig {
 // ============================================================================
 
 /** Default program ID (Solana Devnet) - imported from pda.ts */
-export { UTXOPIA_PROGRAM_ID as DEFAULT_PROGRAM_ID } from "./pda";
+export { UTXOPIA_PROGRAM_ID as DEFAULT_PROGRAM_ID } from "./config";
 
 /** Maximum BTC supply in satoshis (21 million BTC) */
 const MAX_SATS = 21_000_000n * 100_000_000n;

@@ -39,33 +39,15 @@ export function decodeClaimLink(encoded: string): string | null {
 
 /**
  * Parse claim URL — reads seed from URL fragment (#note=...).
- * Falls back to query param (?note=...) for backward compatibility.
  *
- * @param url - URL string or URLSearchParams
+ * @param url - URL string
  * @returns Seed string or null if invalid
  */
-export function parseClaimUrl(url: string | URLSearchParams): string | null {
-  if (typeof url === "string") {
-    // Try hash fragment first (#note=...) — preferred, never sent to server
-    if (url.includes("#note=")) {
-      const encoded = url.split("#note=")[1].split("&")[0];
-      if (encoded) return decodeClaimLink(encoded);
-    }
-
-    // Fall back to query string (?note=...) for backward compat
-    const queryStr = url.includes("?") ? url.split("?")[1]?.split("#")[0] : url;
-    if (queryStr) {
-      const params = new URLSearchParams(queryStr);
-      const note = params.get("note");
-      if (note) return decodeClaimLink(note);
-    }
-
-    return null;
+export function parseClaimUrl(url: string): string | null {
+  if (url.includes("#note=")) {
+    const encoded = url.split("#note=")[1].split("&")[0];
+    if (encoded) return decodeClaimLink(encoded);
   }
-
-  // URLSearchParams (from Next.js useSearchParams — won't have fragment)
-  const note = url.get("note");
-  if (note) return decodeClaimLink(note);
 
   return null;
 }

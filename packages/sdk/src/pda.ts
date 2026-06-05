@@ -4,9 +4,6 @@
  * Centralized module for all UTXOpia PDA derivations.
  * Prevents code duplication across api.ts, pda.ts, etc.
  *
- * NOTE: Program IDs are defined in config.ts and re-exported here
- * for backwards compatibility. Use config.ts for all new code.
- *
  * @module pda
  */
 
@@ -15,29 +12,10 @@ import {
   type Address,
 } from "@solana/kit";
 
-// Import program IDs from config for local use
 import {
-  UTXOPIA_PROGRAM_ID as _UTXOPIA_PROGRAM_ID,
-  BTC_LIGHT_CLIENT_PROGRAM_ID as _BTC_LIGHT_CLIENT_PROGRAM_ID,
-} from "./config";
-
-// Re-export everything from config for backwards compatibility
-export {
   UTXOPIA_PROGRAM_ID,
   BTC_LIGHT_CLIENT_PROGRAM_ID,
-  getConfig,
-  setConfig,
-  initConfig,
-  DEVNET_CONFIG,
-  MAINNET_CONFIG,
-  LOCALNET_CONFIG,
-  type NetworkConfig,
-  type NetworkType,
 } from "./config";
-
-// Local aliases for use in this file
-const UTXOPIA_PROGRAM_ID = _UTXOPIA_PROGRAM_ID;
-const BTC_LIGHT_CLIENT_PROGRAM_ID = _BTC_LIGHT_CLIENT_PROGRAM_ID;
 
 // =============================================================================
 // PDA Seeds
@@ -76,25 +54,15 @@ export async function derivePoolStatePDA(
 /**
  * Derive Commitment Tree PDA
  *
- * @param treeIndex - Tree rotation index (default 0). When undefined or 0,
- *   uses the legacy seed for backward compatibility.
+ * @param treeIndex - Tree rotation index (default 0).
  */
 export async function deriveCommitmentTreePDA(
   programId: Address = UTXOPIA_PROGRAM_ID,
   treeIndex?: number,
 ): Promise<[Address, number]> {
-  // Legacy seed for tree 0 (backward compat with existing deployments)
-  if (treeIndex === undefined || treeIndex === 0) {
-    const result = await getProgramDerivedAddress({
-      programAddress: programId,
-      seeds: [new TextEncoder().encode(PDA_SEEDS.COMMITMENT_TREE)],
-    });
-    return [result[0], result[1]];
-  }
-
-  // Indexed seed for rotated trees
+  const resolvedTreeIndex = treeIndex ?? 0;
   const indexBytes = new Uint8Array(4);
-  new DataView(indexBytes.buffer).setUint32(0, treeIndex, true);
+  new DataView(indexBytes.buffer).setUint32(0, resolvedTreeIndex, true);
   const result = await getProgramDerivedAddress({
     programAddress: programId,
     seeds: [new TextEncoder().encode(PDA_SEEDS.COMMITMENT_TREE), indexBytes],

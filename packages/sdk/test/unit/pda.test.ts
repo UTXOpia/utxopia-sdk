@@ -164,7 +164,7 @@ describe("deriveCommitmentTreePDA", () => {
     expect(bump).toBeLessThanOrEqual(255);
   });
 
-  test("tree index 0 and undefined give same PDA (backward compat)", async () => {
+  test("tree index 0 and undefined give same indexed PDA", async () => {
     const [addr0] = await deriveCommitmentTreePDA(TEST_PROGRAM_ID, 0);
     const [addrUndef] = await deriveCommitmentTreePDA(TEST_PROGRAM_ID, undefined);
     const [addrDefault] = await deriveCommitmentTreePDA(TEST_PROGRAM_ID);

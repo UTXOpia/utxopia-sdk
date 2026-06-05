@@ -34,13 +34,13 @@ describe("parseClaimUrl", () => {
     expect(parseClaimUrl(url)).toBe(seed);
   });
 
-  it("extracts seed from ?note= query param", () => {
+  it("ignores ?note= query param", () => {
     const seed = "queryseed1234567";
     const url = `https://example.com/claim?note=${encodeClaimLink(seed)}`;
-    expect(parseClaimUrl(url)).toBe(seed);
+    expect(parseClaimUrl(url)).toBeNull();
   });
 
-  it("prefers #note= over ?note=", () => {
+  it("extracts #note= even when query params are present", () => {
     const hashSeed = "hashseedvalue123";
     const querySeed = "queryseedvalue12";
     const url = `https://example.com?note=${encodeClaimLink(querySeed)}#note=${encodeClaimLink(hashSeed)}`;
@@ -55,14 +55,4 @@ describe("parseClaimUrl", () => {
     expect(parseClaimUrl("")).toBeNull();
   });
 
-  it("works with URLSearchParams", () => {
-    const seed = "paramsseed123456";
-    const params = new URLSearchParams(`note=${encodeClaimLink(seed)}`);
-    expect(parseClaimUrl(params)).toBe(seed);
-  });
-
-  it("returns null for URLSearchParams without note", () => {
-    const params = new URLSearchParams("foo=bar");
-    expect(parseClaimUrl(params)).toBeNull();
-  });
 });

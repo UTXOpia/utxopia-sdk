@@ -368,8 +368,6 @@ export {
 // ==========================================================================
 
 export {
-  UTXOPIA_PROGRAM_ID,
-  BTC_LIGHT_CLIENT_PROGRAM_ID,
   PDA_SEEDS,
   derivePoolStatePDA,
   deriveCommitmentTreePDA,
@@ -608,7 +606,7 @@ export {
   type RotateTreeOptions,
   // Verify instruction data builders
   buildVerifyTransactionInstructionData,
-  buildVerifyStealthDepositInstructionData,
+  buildCompleteDepositInstructionData,
   // Redemption PDA helper
   deriveRedemptionRequestPDA as deriveRedemptionRequestPDAFromInstruction,
   type Instruction,

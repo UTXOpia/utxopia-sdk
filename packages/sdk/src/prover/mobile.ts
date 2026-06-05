@@ -46,15 +46,6 @@ export function setCircuitResolver(resolver: CircuitResolver): void {
   circuitResolver = resolver;
 }
 
-// Keep legacy API surface for backward compat
-export function setCircuitPath(_path: string): void {
-  // no-op — mobile uses resolver, not a base path
-}
-
-export function getCircuitPath(): string {
-  return "";
-}
-
 // ---------------------------------------------------------------------------
 // Initialisation
 // ---------------------------------------------------------------------------

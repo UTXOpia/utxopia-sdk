@@ -56,6 +56,10 @@ import {
   deriveCommitmentTreePDA,
   deriveVerifiedTransactionPDA,
 } from "./pda";
+import {
+  BTC_LIGHT_CLIENT_PROGRAM_ID,
+  UTXOPIA_PROGRAM_ID,
+} from "./config";
 
 // ========== Constants ==========
 
@@ -68,7 +72,6 @@ export const STEALTH_OP_RETURN_SIZE = 32;
 /** Instruction discriminator for complete_deposit */
 export const COMPLETE_DEPOSIT_DISCRIMINATOR = 11;
 
-import { UTXOPIA_PROGRAM_ID } from "./pda";
 import { debug } from "./logger";
 const SYSTEM_PROGRAM_ID: Address = address(
   "11111111111111111111111111111111"
@@ -230,14 +233,13 @@ export async function completeDeposit(
   }
   txidBytes.reverse(); // internal byte order
 
-  const { BTC_LIGHT_CLIENT_PROGRAM_ID } = await import("./pda");
   const [poolState] = await derivePoolStatePDA(programId);
   const [lightClient] = await deriveLightClientPDA(BTC_LIGHT_CLIENT_PROGRAM_ID);
   const [commitmentTree] = await deriveCommitmentTreePDA(programId);
 
   debug("stealth", "PDAs derived", { pool: String(poolState).slice(0, 8), tree: String(commitmentTree).slice(0, 8) });
 
-  const instructionData = buildVerifyStealthDepositData({
+  const instructionData = buildCompleteDepositData({
     txid: txidBytes,
     blockHeight: BigInt(blockHeight),
     expectedValue,
@@ -296,7 +298,7 @@ export async function completeDeposit(
  * - ephemeral_pub: 32 bytes (Ed25519)
  * - npk: 32 bytes
  */
-function buildVerifyStealthDepositData(params: {
+function buildCompleteDepositData(params: {
   txid: Uint8Array;
   blockHeight: bigint;
   expectedValue: bigint;
