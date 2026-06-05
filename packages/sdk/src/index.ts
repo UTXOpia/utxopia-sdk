@@ -442,23 +442,6 @@ export {
 } from "./stealth";
 
 // ==========================================================================
-// Direct stealth deposit (combined BTC deposit + stealth announcement)
-// ==========================================================================
-
-export {
-  prepareStealthDeposit,
-  buildStealthOpReturn,
-  parseStealthOpReturn,
-  completeDeposit,
-  STEALTH_OP_RETURN_SIZE,
-  COMPLETE_DEPOSIT_DISCRIMINATOR,
-  type PreparedStealthDeposit,
-  type StealthDepositData,
-  type ParsedStealthOpReturn,
-  type Ed25519KeyPair,
-} from "./stealth-deposit";
-
-// ==========================================================================
 // PSBT builder for wallet-integrated deposits
 // ==========================================================================
 

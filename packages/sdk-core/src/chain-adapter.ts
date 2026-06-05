@@ -71,6 +71,7 @@ export interface RedemptionInput {
   amountsSats?: bigint[];
   maxFeesSats?: bigint[];
   nPublicOutputs?: number;
+  stealthData?: Uint8Array[];
 }
 
 export interface RegisterVerifyingKeyInput {

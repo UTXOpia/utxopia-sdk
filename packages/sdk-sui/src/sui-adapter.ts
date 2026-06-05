@@ -256,9 +256,13 @@ export class UTXOpiaSuiAdapter implements UTXOpiaChainAdapter {
     const maxFeesSats = input.maxFeesSats ?? [input.maxFeeSats];
     const nPublicOutputs = input.nPublicOutputs ?? btcScripts.length;
     const nOutputs = input.commitmentsOut.length;
+    const stealthData = input.stealthData ?? [];
 
     if (nPublicOutputs !== btcScripts.length || nPublicOutputs !== amountsSats.length || nPublicOutputs !== maxFeesSats.length) {
       throw new Error("Sui redemption public output count must match btcScripts, amountsSats, and maxFeesSats");
+    }
+    if (stealthData.length !== nOutputs - nPublicOutputs) {
+      throw new Error("Sui redemption stealthData count must match tree output count");
     }
 
     tx.moveCall({
@@ -300,6 +304,7 @@ export class UTXOpiaSuiAdapter implements UTXOpiaChainAdapter {
         tx.pure("vector<vector<u8>>", btcScripts.map((bytes) => Array.from(bytes))),
         tx.pure("vector<u64>", amountsSats.map((amount) => amount.toString())),
         tx.pure("vector<u64>", maxFeesSats.map((fee) => fee.toString())),
+        tx.pure("vector<vector<u8>>", stealthData.map((bytes) => Array.from(bytes))),
       ],
     });
 

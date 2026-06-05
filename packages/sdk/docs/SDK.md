@@ -436,17 +436,15 @@ Derive 3-key set from Solana wallet signature:
 | `clearUTXOpiaKeys(keys)` | Secure memory clearing |
 | `extractViewOnlyBundle(keys)` | Export view-only key bundle |
 
-### Stealth Deposit (`./stealth-deposit`)
+### Compact Taproot Deposit (`./taproot`)
 
-Direct BTC deposit with stealth data:
+Supported BTC deposit helper:
 
 | Export | Description |
 |--------|-------------|
-| `prepareStealthDeposit(meta, groupPubKey, network)` | Build complete deposit transaction data |
-| `buildStealthOpReturn(ephemeralPub, npk)` | Build 64-byte OP_RETURN script |
-| `parseStealthOpReturn(script)` | Parse OP_RETURN to extract stealth data |
-| `completeDeposit(data)` | Verify deposit data integrity |
-| `STEALTH_OP_RETURN_SIZE` | 64 bytes |
+| `buildDepositOpReturn(...)` | Build the 73-byte compact deposit OP_RETURN payload |
+| `parseDepositOpReturn(data)` | Parse compact OP_RETURN payload metadata |
+| `DEPOSIT_OP_RETURN_SIZE` | 73 bytes |
 
 ### PSBT Builder (`./psbt`)
 
