@@ -62,6 +62,15 @@ export interface RedemptionInput {
   amountSats: bigint;
   maxFeeSats: bigint;
   proof: Uint8Array;
+  vkHash?: Uint8Array;
+  publicInputs?: Uint8Array;
+  proofPoints?: Uint8Array;
+  nullifiers?: Uint8Array[];
+  commitmentsOut?: Uint8Array[];
+  btcScripts?: Uint8Array[];
+  amountsSats?: bigint[];
+  maxFeesSats?: bigint[];
+  nPublicOutputs?: number;
 }
 
 export interface RegisterVerifyingKeyInput {

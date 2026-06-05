@@ -231,37 +231,81 @@ export class UTXOpiaSuiAdapter implements UTXOpiaChainAdapter {
     if (!this.config.redemptionQueueObjectId) {
       throw new Error("Sui redemption queue object ID is required to build redemption PTBs");
     }
-    if (!this.config.redemptionCapObjectId || !this.config.redemptionCapVersion || !this.config.redemptionCapDigest) {
-      throw new Error("Sui redemption cap object ref is required to request redemptions");
+    if (!this.config.commitmentTreeObjectId) {
+      throw new Error("Sui commitment tree object ID is required to build redemption PTBs");
+    }
+    if (!this.config.nullifierRegistryObjectId) {
+      throw new Error("Sui nullifier registry object ID is required to build redemption PTBs");
+    }
+    if (!this.config.verifyingKeyRegistryObjectId) {
+      throw new Error("Sui verifying-key registry object ID is required to build redemption PTBs");
+    }
+    if (!input.vkHash || !input.publicInputs || !(input.proofPoints ?? input.proof) || !input.commitmentsOut) {
+      throw new Error("Sui redemption PTBs require vkHash, publicInputs, proofPoints, and commitmentsOut");
     }
 
     const tx = new Transaction();
-    const redemptionCap = tx.objectRef({
-      objectId: this.config.redemptionCapObjectId,
-      version: this.config.redemptionCapVersion,
-      digest: this.config.redemptionCapDigest,
-    });
+    const nullifiers = input.nullifiers ?? input.inputNotes
+      .map((note) => note.nullifier)
+      .filter((nullifier): nullifier is string => Boolean(nullifier))
+      .map(bytesFromHexOrUtf8);
+    const btcScripts = input.btcScripts ?? [bytesFromHexOrUtf8(input.btcAddress)];
+    const amountsSats = input.amountsSats ?? [input.amountSats];
+    const maxFeesSats = input.maxFeesSats ?? [input.maxFeeSats];
+    const nPublicOutputs = input.nPublicOutputs ?? btcScripts.length;
+    const nOutputs = input.commitmentsOut.length;
+
+    if (nPublicOutputs !== btcScripts.length || nPublicOutputs !== amountsSats.length || nPublicOutputs !== maxFeesSats.length) {
+      throw new Error("Sui redemption public output count must match btcScripts, amountsSats, and maxFeesSats");
+    }
 
     tx.moveCall({
-      target: `${this.config.packageId}::redemption::request_redemption`,
+      target: `${this.config.packageId}::redemption::redeem`,
       arguments: [
-        redemptionCap,
         this.sharedObject(tx, this.config.poolObjectId, this.config.poolInitialSharedVersion, true),
+        this.sharedObject(
+          tx,
+          this.config.commitmentTreeObjectId,
+          this.config.commitmentTreeInitialSharedVersion,
+          true,
+        ),
+        this.sharedObject(
+          tx,
+          this.config.nullifierRegistryObjectId,
+          this.config.nullifierRegistryInitialSharedVersion,
+          true,
+        ),
+        this.sharedObject(
+          tx,
+          this.config.verifyingKeyRegistryObjectId,
+          this.config.verifyingKeyRegistryInitialSharedVersion,
+          false,
+        ),
         this.sharedObject(
           tx,
           this.config.redemptionQueueObjectId,
           this.config.redemptionQueueInitialSharedVersion,
           true,
         ),
-        tx.pure.vector("u8", bytesFromHexOrUtf8(input.btcAddress)),
-        tx.pure.u64(input.amountSats.toString()),
-        tx.pure.u64(input.maxFeeSats.toString()),
+        tx.pure.u8(input.inputNotes.length),
+        tx.pure.u8(nOutputs),
+        tx.pure.u8(nPublicOutputs),
+        tx.pure.vector("u8", input.vkHash),
+        tx.pure.vector("u8", input.publicInputs),
+        tx.pure.vector("u8", input.proofPoints ?? input.proof),
+        tx.pure("vector<vector<u8>>", nullifiers.map((bytes) => Array.from(bytes))),
+        tx.pure("vector<vector<u8>>", input.commitmentsOut.map((bytes) => Array.from(bytes))),
+        tx.pure("vector<vector<u8>>", btcScripts.map((bytes) => Array.from(bytes))),
+        tx.pure("vector<u64>", amountsSats.map((amount) => amount.toString())),
+        tx.pure("vector<u64>", maxFeesSats.map((fee) => fee.toString())),
       ],
     });
 
-    return this.buildPtb(tx, "Sui BTC redemption request PTB", [
-      this.config.redemptionCapObjectId,
+    return this.buildPtb(tx, "Sui proof-checked BTC redemption PTB", [
       this.config.poolObjectId,
+      this.config.commitmentTreeObjectId,
+      this.config.nullifierRegistryObjectId,
+      this.config.verifyingKeyRegistryObjectId,
       this.config.redemptionQueueObjectId,
     ]);
   }
