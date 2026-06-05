@@ -583,8 +583,6 @@ export {
   buildShieldInstructionData,
   buildShieldInstruction,
   type ShieldInstructionOptions,
-  buildRedemptionRequestInstructionData,
-  buildRedemptionRequestInstruction,
   buildApproveRedemptionSigningInstructionData,
   buildApproveRedemptionSigningInstruction,
   bigintTo32Bytes,
@@ -614,7 +612,6 @@ export {
   // Redemption PDA helper
   deriveRedemptionRequestPDA as deriveRedemptionRequestPDAFromInstruction,
   type Instruction,
-  type RedemptionRequestInstructionOptions,
   type ApproveRedemptionSigningInstructionOptions,
   type TransactInstructionOptions,
   type UnshieldInstructionOptions,

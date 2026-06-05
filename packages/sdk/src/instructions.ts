@@ -57,7 +57,7 @@ const INSTRUCTION = {
   UNSHIELD: 14,
   REDEEM: 15,
   // Redemption lifecycle (16-19)
-  REQUEST_REDEMPTION: 16,
+  RESERVED_REQUEST_REDEMPTION: 16,
   COMPLETE_REDEMPTION: 17,
   MARK_PROCESSING: 18,
   CANCEL_REDEMPTION: 19,
@@ -203,131 +203,6 @@ export function buildShieldInstruction(options: ShieldInstructionOptions): Instr
       { address: options.accounts.commitmentTree, role: AccountRole.WRITABLE },
       { address: options.accounts.tokenProgram, role: AccountRole.READONLY },
     ],
-    data,
-  };
-}
-
-// =============================================================================
-// Redemption Request Instruction Builder
-// =============================================================================
-
-/**
- * Build instruction data for REQUEST_REDEMPTION (disc 5)
- *
- * Escrow-based: locks zkBTC by decrementing total_shielded. Does NOT burn tokens.
- *
- * Layout (after disc stripped):
- * - proof_hash: [u8; 32] — SHA256 of ZK proof (all zeros = demo mode)
- * - merkle_root: [u8; 32]
- * - nullifier_hash: [u8; 32]
- * - amount_sats: u64 LE
- * - vk_hash: [u8; 32] — verification key hash (all zeros = demo mode)
- * - btc_script_len: u8
- * - btc_script: [u8; 0-34]
- * - request_nonce: u64 LE
- */
-export function buildRedemptionRequestInstructionData(options: {
-  proofHash: Uint8Array;
-  merkleRoot: Uint8Array;
-  nullifierHash: Uint8Array;
-  amountSats: bigint;
-  vkHash: Uint8Array;
-  btcScript: Uint8Array;
-  requestNonce: bigint;
-}): Uint8Array {
-  const { proofHash, merkleRoot, nullifierHash, amountSats, vkHash, btcScript, requestNonce } = options;
-
-  if (btcScript.length > 34) {
-    throw new Error("BTC scriptPubKey too long (max 34 bytes)");
-  }
-
-  // disc(1) + proof_hash(32) + merkle_root(32) + nullifier_hash(32) + amount(8) + vk_hash(32) + script_len(1) + script(var) + nonce(8)
-  const totalLen = 1 + 32 + 32 + 32 + 8 + 32 + 1 + btcScript.length + 8;
-  const data = new Uint8Array(totalLen);
-  const view = new DataView(data.buffer);
-
-  let offset = 0;
-  data[offset++] = INSTRUCTION.REQUEST_REDEMPTION;
-
-  data.set(proofHash, offset); offset += 32;
-  data.set(merkleRoot, offset); offset += 32;
-  data.set(nullifierHash, offset); offset += 32;
-  view.setBigUint64(offset, amountSats, true); offset += 8;
-  data.set(vkHash, offset); offset += 32;
-  data[offset++] = btcScript.length;
-  data.set(btcScript, offset); offset += btcScript.length;
-  view.setBigUint64(offset, requestNonce, true);
-
-  return data;
-}
-
-/** Redemption request instruction options */
-export interface RedemptionRequestInstructionOptions {
-  /** SHA256 of ZK proof (all zeros = demo mode) */
-  proofHash: Uint8Array;
-  /** Current merkle tree root */
-  merkleRoot: Uint8Array;
-  /** Nullifier hash */
-  nullifierHash: Uint8Array;
-  /** Amount to redeem in satoshis */
-  amountSats: bigint;
-  /** Verification key hash (all zeros = demo mode) */
-  vkHash: Uint8Array;
-  /** Bitcoin scriptPubKey for withdrawal (raw bytes) */
-  btcScript: Uint8Array;
-  /** Unique request nonce */
-  requestNonce: bigint;
-  /** Account addresses */
-  accounts: {
-    poolState: Address;
-    commitmentTree: Address;
-    nullifierRecord: Address;
-    redemptionRequest: Address;
-    user: Address;
-    tokenConfig: Address;
-  };
-}
-
-/**
- * Build a complete redemption request instruction
- *
- * Accounts (7):
- * 0. pool_state (writable)
- * 1. commitment_tree (readonly)
- * 2. nullifier_record (writable)
- * 3. redemption_request (writable)
- * 4. user (signer)
- * 5. system_program (readonly)
- * 6. token_config (writable)
- */
-export function buildRedemptionRequestInstruction(
-  options: RedemptionRequestInstructionOptions
-): Instruction {
-  const config = getConfig();
-
-  const data = buildRedemptionRequestInstructionData({
-    proofHash: options.proofHash,
-    merkleRoot: options.merkleRoot,
-    nullifierHash: options.nullifierHash,
-    amountSats: options.amountSats,
-    vkHash: options.vkHash,
-    btcScript: options.btcScript,
-    requestNonce: options.requestNonce,
-  });
-
-  const accounts: Instruction["accounts"] = [
-    { address: options.accounts.poolState, role: AccountRole.WRITABLE },
-    { address: options.accounts.commitmentTree, role: AccountRole.READONLY },
-    { address: options.accounts.nullifierRecord, role: AccountRole.WRITABLE },
-    { address: options.accounts.redemptionRequest, role: AccountRole.WRITABLE },
-    { address: options.accounts.user, role: AccountRole.WRITABLE_SIGNER },
-    { address: SYSTEM_PROGRAM_ADDRESS, role: AccountRole.READONLY },
-    { address: options.accounts.tokenConfig, role: AccountRole.WRITABLE },
-  ];
-
-  return {
-    programAddress: config.utxopiaProgramId,
-    accounts,
     data,
   };
 }
@@ -1126,7 +1001,7 @@ export function buildUnshieldInstruction(options: UnshieldInstructionOptions): I
   };
 }
 
-// Redeem and PublicRedeem instructions removed — use request_redemption for BTC withdrawals
+// Legacy request_redemption/public_redeem instructions are reserved; use REDEEM for proof-checked BTC withdrawals.
 // =============================================================================
 // Timelocked Pool Update Instruction Builders
 // =============================================================================

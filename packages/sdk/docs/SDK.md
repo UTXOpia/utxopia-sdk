@@ -121,7 +121,7 @@ import {
 
   // === Instruction Builders ===
   buildTransactInstruction,         // JoinSplit transact instruction
-  buildRedemptionRequestInstruction, // BTC withdrawal request
+  buildRedeemInstructionData,       // Proof-checked BTC withdrawal request data
 
   // === Key Derivation ===
   deriveKeysFromWallet,             // Wallet → UTXOpiaKeys

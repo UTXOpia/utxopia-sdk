@@ -1,14 +1,13 @@
 /**
  * Cross-layer instruction builder tests
  *
- * Verifies that the 4 SDK instruction builders produce byte layouts
+ * Verifies that the SDK instruction builders produce byte layouts
  * exactly matching what the on-chain Rust code parses.
  *
  * Tested builders:
  * 1. buildTransactInstructionData (disc 13)
  * 2. buildUnshieldInstructionData (disc 14)
- * 3. buildRedemptionRequestInstructionData (disc 16)
- * 4. buildCompleteRedemptionInstructionData (disc 17)
+ * 3. buildCompleteRedemptionInstructionData (disc 17)
  *
  * For each builder we verify:
  * - Discriminator byte
@@ -20,7 +19,6 @@
  * Reference Rust files:
  * - contracts/programs/utxopia/src/instructions/transact.rs
  * - contracts/programs/utxopia/src/instructions/unshield.rs
- * - contracts/programs/utxopia/src/instructions/request_redemption.rs
  * - contracts/programs/utxopia/src/instructions/complete_redemption.rs
  */
 
@@ -32,8 +30,6 @@ import {
   buildTransactInstruction,
   buildUnshieldInstructionData,
   buildUnshieldInstruction,
-  buildRedemptionRequestInstructionData,
-  buildRedemptionRequestInstruction,
   buildCompleteRedemptionInstructionData,
   buildCompleteRedemptionInstruction,
 } from "../../src/instructions";
@@ -51,7 +47,7 @@ const STEALTH_DATA_PER_OUTPUT = 72; // ephemeral_pub(32) + encrypted_amount(8) +
 // Instruction discriminators from contracts/programs/utxopia/src/lib.rs
 const DISC_TRANSACT = 13;
 const DISC_UNSHIELD = 14;
-const DISC_REQUEST_REDEMPTION = 16;
+const DISC_RESERVED_REQUEST_REDEMPTION = 16;
 const DISC_COMPLETE_REDEMPTION = 17;
 
 // =============================================================================
@@ -709,306 +705,6 @@ describe("Cross-layer: buildUnshieldInstructionData (disc=14)", () => {
 });
 
 // =============================================================================
-// REQUEST_REDEMPTION (disc 16) — contracts/programs/utxopia/src/instructions/request_redemption.rs
-// =============================================================================
-
-describe("Cross-layer: buildRedemptionRequestInstructionData (disc=16)", () => {
-  /**
-   * Rust layout (data received AFTER disc stripped):
-   * [0..32]     proof_hash:     [u8; 32]
-   * [32..64]    merkle_root:    [u8; 32]
-   * [64..96]    nullifier_hash: [u8; 32]
-   * [96..104]   amount_sats:    u64 LE
-   * [104..136]  vk_hash:        [u8; 32]
-   * [136]       btc_script_len: u8
-   * [137..137+len] btc_script:  variable
-   * [137+len..] request_nonce:  u64 LE
-   *
-   * Minimum: 145 bytes (with btc_script_len=0, nonce=8) but script_len=0 rejected on-chain
-   */
-
-  describe("discriminator", () => {
-    it("first byte is 16", () => {
-      const data = buildRedemptionRequestInstructionData({
-        proofHash: filledBytes(32, 0x01),
-        merkleRoot: filledBytes(32, 0x02),
-        nullifierHash: filledBytes(32, 0x03),
-        amountSats: 100000n,
-        vkHash: filledBytes(32, 0x04),
-        btcScript: filledBytes(22, 0x55), // P2WPKH
-        requestNonce: 1n,
-      });
-      expect(data[0]).toBe(DISC_REQUEST_REDEMPTION);
-    });
-  });
-
-  describe("total data length", () => {
-    it("with 22-byte P2WPKH script: disc(1) + proof_hash(32) + root(32) + nullifier(32) + amount(8) + vk(32) + len(1) + script(22) + nonce(8) = 168", () => {
-      const scriptLen = 22;
-      const expected = 1 + 32 + 32 + 32 + 8 + 32 + 1 + scriptLen + 8;
-      expect(expected).toBe(168);
-      const data = buildRedemptionRequestInstructionData({
-        proofHash: filledBytes(32, 0x01),
-        merkleRoot: filledBytes(32, 0x02),
-        nullifierHash: filledBytes(32, 0x03),
-        amountSats: 100000n,
-        vkHash: filledBytes(32, 0x04),
-        btcScript: filledBytes(scriptLen, 0x55),
-        requestNonce: 1n,
-      });
-      expect(data.length).toBe(expected);
-    });
-
-    it("with 34-byte P2TR script: disc(1) + 32 + 32 + 32 + 8 + 32 + 1 + 34 + 8 = 180", () => {
-      const scriptLen = 34;
-      const expected = 1 + 32 + 32 + 32 + 8 + 32 + 1 + scriptLen + 8;
-      expect(expected).toBe(180);
-      const data = buildRedemptionRequestInstructionData({
-        proofHash: filledBytes(32, 0x01),
-        merkleRoot: filledBytes(32, 0x02),
-        nullifierHash: filledBytes(32, 0x03),
-        amountSats: 200000n,
-        vkHash: filledBytes(32, 0x04),
-        btcScript: filledBytes(scriptLen, 0x66),
-        requestNonce: 42n,
-      });
-      expect(data.length).toBe(expected);
-    });
-
-    it("with empty script: disc(1) + 32 + 32 + 32 + 8 + 32 + 1 + 0 + 8 = 146", () => {
-      const expected = 1 + 32 + 32 + 32 + 8 + 32 + 1 + 0 + 8;
-      expect(expected).toBe(146);
-      const data = buildRedemptionRequestInstructionData({
-        proofHash: filledBytes(32, 0x01),
-        merkleRoot: filledBytes(32, 0x02),
-        nullifierHash: filledBytes(32, 0x03),
-        amountSats: 100000n,
-        vkHash: filledBytes(32, 0x04),
-        btcScript: new Uint8Array(0),
-        requestNonce: 1n,
-      });
-      expect(data.length).toBe(expected);
-    });
-  });
-
-  describe("field offsets match Rust parsing", () => {
-    it("proof_hash at 0, merkle_root at 32, nullifier_hash at 64 (contract offsets)", () => {
-      const ph = filledBytes(32, 0xaa);
-      const mr = filledBytes(32, 0xbb);
-      const nh = filledBytes(32, 0xcc);
-
-      const data = buildRedemptionRequestInstructionData({
-        proofHash: ph,
-        merkleRoot: mr,
-        nullifierHash: nh,
-        amountSats: 50000n,
-        vkHash: filledBytes(32, 0x00),
-        btcScript: filledBytes(22, 0x55),
-        requestNonce: 1n,
-      });
-      const cd = data.slice(1); // strip disc
-
-      // Rust: proof_hash.copy_from_slice(&data[0..32])
-      expect(cd.slice(0, 32)).toEqual(ph);
-      // Rust: merkle_root.copy_from_slice(&data[32..64])
-      expect(cd.slice(32, 64)).toEqual(mr);
-      // Rust: nullifier_hash.copy_from_slice(&data[64..96])
-      expect(cd.slice(64, 96)).toEqual(nh);
-    });
-
-    it("amount_sats at 96 as u64 LE", () => {
-      const amount = 123456789n;
-      const data = buildRedemptionRequestInstructionData({
-        proofHash: filledBytes(32, 0x01),
-        merkleRoot: filledBytes(32, 0x02),
-        nullifierHash: filledBytes(32, 0x03),
-        amountSats: amount,
-        vkHash: filledBytes(32, 0x04),
-        btcScript: filledBytes(22, 0x55),
-        requestNonce: 1n,
-      });
-      const cd = data.slice(1);
-      // Rust: u64::from_le_bytes(data[96..104])
-      const parsed = new DataView(cd.buffer, cd.byteOffset).getBigUint64(96, true);
-      expect(parsed).toBe(amount);
-    });
-
-    it("vk_hash at 104, btc_script_len at 136", () => {
-      const vk = filledBytes(32, 0xdd);
-      const script = filledBytes(22, 0x55);
-      const data = buildRedemptionRequestInstructionData({
-        proofHash: filledBytes(32, 0x01),
-        merkleRoot: filledBytes(32, 0x02),
-        nullifierHash: filledBytes(32, 0x03),
-        amountSats: 50000n,
-        vkHash: vk,
-        btcScript: script,
-        requestNonce: 1n,
-      });
-      const cd = data.slice(1);
-
-      // Rust: vk_hash.copy_from_slice(&data[104..136])
-      expect(cd.slice(104, 136)).toEqual(vk);
-      // Rust: let btc_script_len = data[136]
-      expect(cd[136]).toBe(22);
-    });
-
-    it("btc_script at 137, request_nonce at 137+script_len", () => {
-      const script = new Uint8Array([0x51, 0x20, ...new Array(30).fill(0xab)]);
-      expect(script.length).toBe(32);
-      const nonce = 9999n;
-      const data = buildRedemptionRequestInstructionData({
-        proofHash: filledBytes(32, 0x01),
-        merkleRoot: filledBytes(32, 0x02),
-        nullifierHash: filledBytes(32, 0x03),
-        amountSats: 50000n,
-        vkHash: filledBytes(32, 0x04),
-        btcScript: script,
-        requestNonce: nonce,
-      });
-      const cd = data.slice(1);
-
-      // Rust: btc_script[..btc_script_len].copy_from_slice(&data[137..addr_end])
-      expect(cd.slice(137, 137 + 32)).toEqual(script);
-      // Rust: u64::from_le_bytes(data[addr_end..addr_end + 8])
-      const parsed = new DataView(cd.buffer, cd.byteOffset).getBigUint64(137 + 32, true);
-      expect(parsed).toBe(nonce);
-    });
-
-    it("Rust minimum size check: data.len() >= 145", () => {
-      // 145 = proof_hash(32) + merkle_root(32) + nullifier_hash(32) + amount(8) + vk_hash(32) + btc_script_len(1) + nonce(8)
-      // With btc_script_len=0 and nonce=8, that's 32+32+32+8+32+1+8 = 145
-      const data = buildRedemptionRequestInstructionData({
-        proofHash: filledBytes(32, 0x01),
-        merkleRoot: filledBytes(32, 0x02),
-        nullifierHash: filledBytes(32, 0x03),
-        amountSats: 50000n,
-        vkHash: filledBytes(32, 0x04),
-        btcScript: new Uint8Array(0),
-        requestNonce: 1n,
-      });
-      const cd = data.slice(1);
-      // Must be >= Rust's minimum of 145
-      expect(cd.length).toBeGreaterThanOrEqual(145);
-    });
-  });
-
-  describe("account count and order", () => {
-    it("requires exactly 7 accounts", () => {
-      const ix = buildRedemptionRequestInstruction({
-        proofHash: filledBytes(32, 0x01),
-        merkleRoot: filledBytes(32, 0x02),
-        nullifierHash: filledBytes(32, 0x03),
-        amountSats: 100000n,
-        vkHash: filledBytes(32, 0x04),
-        btcScript: filledBytes(22, 0x55),
-        requestNonce: 1n,
-        accounts: {
-          poolState: fakeAddress("pool"),
-          commitmentTree: fakeAddress("tree"),
-          nullifierRecord: fakeAddress("nr"),
-          redemptionRequest: fakeAddress("rr"),
-          user: fakeAddress("user"),
-          tokenConfig: fakeAddress("tc"),
-        },
-      });
-      expect(ix.accounts.length).toBe(7);
-    });
-
-    it("account order: pool(w), tree(r), nullifier(w), redemption(w), user(ws), system(r), token_config(w)", () => {
-      const ix = buildRedemptionRequestInstruction({
-        proofHash: filledBytes(32, 0x01),
-        merkleRoot: filledBytes(32, 0x02),
-        nullifierHash: filledBytes(32, 0x03),
-        amountSats: 100000n,
-        vkHash: filledBytes(32, 0x04),
-        btcScript: filledBytes(22, 0x55),
-        requestNonce: 1n,
-        accounts: {
-          poolState: fakeAddress("pool"),
-          commitmentTree: fakeAddress("tree"),
-          nullifierRecord: fakeAddress("nr"),
-          redemptionRequest: fakeAddress("rr"),
-          user: fakeAddress("user"),
-          tokenConfig: fakeAddress("tc"),
-        },
-      });
-      expect(ix.accounts[0].role).toBe(AccountRole.WRITABLE);           // pool_state
-      expect(ix.accounts[1].role).toBe(AccountRole.READONLY);           // commitment_tree
-      expect(ix.accounts[2].role).toBe(AccountRole.WRITABLE);           // nullifier_record
-      expect(ix.accounts[3].role).toBe(AccountRole.WRITABLE);           // redemption_request
-      expect(ix.accounts[4].role).toBe(AccountRole.WRITABLE_SIGNER);   // user
-      expect(ix.accounts[5].role).toBe(AccountRole.READONLY);           // system_program
-      expect(ix.accounts[6].role).toBe(AccountRole.WRITABLE);           // token_config
-    });
-  });
-
-  describe("edge cases", () => {
-    it("rejects btc_script > 34 bytes (MAX_BTC_SCRIPT_LEN)", () => {
-      expect(() =>
-        buildRedemptionRequestInstructionData({
-          proofHash: filledBytes(32, 0x01),
-          merkleRoot: filledBytes(32, 0x02),
-          nullifierHash: filledBytes(32, 0x03),
-          amountSats: 100000n,
-          vkHash: filledBytes(32, 0x04),
-          btcScript: filledBytes(35, 0x55), // exceeds 34
-          requestNonce: 1n,
-        })
-      ).toThrow("too long");
-    });
-
-    it("accepts max script length (34 bytes)", () => {
-      const data = buildRedemptionRequestInstructionData({
-        proofHash: filledBytes(32, 0x01),
-        merkleRoot: filledBytes(32, 0x02),
-        nullifierHash: filledBytes(32, 0x03),
-        amountSats: 100000n,
-        vkHash: filledBytes(32, 0x04),
-        btcScript: filledBytes(MAX_BTC_SCRIPT_LEN, 0x55),
-        requestNonce: 1n,
-      });
-      const cd = data.slice(1);
-      expect(cd[136]).toBe(MAX_BTC_SCRIPT_LEN);
-    });
-
-    it("demo mode: proof_hash=zeros, vk_hash=zeros still builds correctly", () => {
-      const data = buildRedemptionRequestInstructionData({
-        proofHash: new Uint8Array(32), // all zeros
-        merkleRoot: filledBytes(32, 0x02),
-        nullifierHash: filledBytes(32, 0x03),
-        amountSats: 50000n,
-        vkHash: new Uint8Array(32), // all zeros
-        btcScript: filledBytes(22, 0x55),
-        requestNonce: 1n,
-      });
-      const cd = data.slice(1);
-      // proof_hash should be all zeros
-      expect(cd.slice(0, 32)).toEqual(new Uint8Array(32));
-      // vk_hash should be all zeros
-      expect(cd.slice(104, 136)).toEqual(new Uint8Array(32));
-    });
-
-    it("large nonce (u64 max) is correctly LE-encoded", () => {
-      const maxNonce = 0xFFFFFFFFFFFFFFFFn;
-      const data = buildRedemptionRequestInstructionData({
-        proofHash: filledBytes(32, 0x01),
-        merkleRoot: filledBytes(32, 0x02),
-        nullifierHash: filledBytes(32, 0x03),
-        amountSats: 50000n,
-        vkHash: filledBytes(32, 0x04),
-        btcScript: filledBytes(22, 0x55),
-        requestNonce: maxNonce,
-      });
-      const cd = data.slice(1);
-      const nonceOffset = 137 + 22;
-      const parsed = new DataView(cd.buffer, cd.byteOffset).getBigUint64(nonceOffset, true);
-      expect(parsed).toBe(maxNonce);
-    });
-  });
-});
-
-// =============================================================================
 // COMPLETE_REDEMPTION (disc 17) — contracts/programs/utxopia/src/instructions/complete_redemption.rs
 // =============================================================================
 
@@ -1319,14 +1015,13 @@ describe("Cross-layer: buildCompleteRedemptionInstructionData (disc=17)", () => 
 // =============================================================================
 
 describe("Cross-layer: instruction discriminator uniqueness", () => {
-  it("all 4 builders produce distinct discriminators", () => {
+  it("active builders produce distinct discriminators", () => {
     const discs = new Set([
       DISC_TRANSACT,
       DISC_UNSHIELD,
-      DISC_REQUEST_REDEMPTION,
       DISC_COMPLETE_REDEMPTION,
     ]);
-    expect(discs.size).toBe(4);
+    expect(discs.size).toBe(3);
   });
 
   it("discriminators match INSTRUCTION_DISCRIMINATORS export", () => {
@@ -1334,7 +1029,7 @@ describe("Cross-layer: instruction discriminator uniqueness", () => {
     const { INSTRUCTION_DISCRIMINATORS } = require("../../src/instructions");
     expect(INSTRUCTION_DISCRIMINATORS.TRANSACT).toBe(DISC_TRANSACT);
     expect(INSTRUCTION_DISCRIMINATORS.UNSHIELD).toBe(DISC_UNSHIELD);
-    expect(INSTRUCTION_DISCRIMINATORS.REQUEST_REDEMPTION).toBe(DISC_REQUEST_REDEMPTION);
+    expect(INSTRUCTION_DISCRIMINATORS.RESERVED_REQUEST_REDEMPTION).toBe(DISC_RESERVED_REQUEST_REDEMPTION);
     expect(INSTRUCTION_DISCRIMINATORS.COMPLETE_REDEMPTION).toBe(DISC_COMPLETE_REDEMPTION);
   });
 });
