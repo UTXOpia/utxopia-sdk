@@ -105,8 +105,6 @@ export class UTXOpiaSuiAdapter implements UTXOpiaChainAdapter {
     depositRawTx?: Uint8Array;
     /** True when the deposit paid the pool directly (sweep tx IS the deposit tx). */
     directToPool: boolean;
-    /** Pool scriptPubKey to locate the credited output; empty selects by OP_RETURN heuristic. */
-    poolScript?: Uint8Array;
   }): Promise<SuiUnsignedTransaction> {
     if (!this.config.btcDepositRegistryObjectId) {
       throw new Error("Sui BTC deposit registry object ID is required to build BTC deposit PTBs");
@@ -155,7 +153,6 @@ export class UTXOpiaSuiAdapter implements UTXOpiaChainAdapter {
         tx.pure.vector("u8", input.sweepRawTx),
         tx.pure.vector("u8", input.depositRawTx ?? new Uint8Array()),
         tx.pure.bool(input.directToPool),
-        tx.pure.vector("u8", input.poolScript ?? new Uint8Array()),
       ],
     });
 
