@@ -30,6 +30,7 @@ import {
   buildTransactInstruction,
   buildUnshieldInstructionData,
   buildUnshieldInstruction,
+  buildRedeemInstructionData,
   buildCompleteRedemptionInstructionData,
   buildCompleteRedemptionInstruction,
 } from "../../src/instructions";
@@ -47,6 +48,7 @@ const STEALTH_DATA_PER_OUTPUT = 72; // ephemeral_pub(32) + encrypted_amount(8) +
 // Instruction discriminators from contracts/programs/utxopia/src/lib.rs
 const DISC_TRANSACT = 13;
 const DISC_UNSHIELD = 14;
+const DISC_REDEEM = 15;
 const DISC_RESERVED_REQUEST_REDEMPTION = 16;
 const DISC_COMPLETE_REDEMPTION = 17;
 
@@ -700,6 +702,76 @@ describe("Cross-layer: buildUnshieldInstructionData (disc=14)", () => {
           unshieldAmounts: [50000n],
         })
       ).toThrow("stealth");
+    });
+  });
+});
+
+// =============================================================================
+// REDEEM (disc 15) — contracts/programs/utxopia/src/instructions/redeem.rs
+// =============================================================================
+
+describe("Cross-layer: buildRedeemInstructionData (disc=15)", () => {
+  describe("discriminator and length", () => {
+    it("2x3 with one public redeem output uses 72-byte stealth data for tree outputs", () => {
+      const n = 2, m = 3, nPublic = 1;
+      const btcScript = filledBytes(34, 0x51);
+      const nTree = m - nPublic;
+      const expected = 1 + 4 + 256 + 32 + 32
+        + n * 32 + m * 32 + nTree * STEALTH_DATA_PER_OUTPUT
+        + 8 + 1 + btcScript.length + 8;
+
+      const data = buildRedeemInstructionData({
+        nInputs: n,
+        nOutputs: m,
+        nPublicOutputs: nPublic,
+        proofBytes: fakeProof(),
+        merkleRoot: filledBytes(32, 0x01),
+        boundParamsHash: filledBytes(32, 0x02),
+        nullifiers: [filledBytes(32, 0x03), filledBytes(32, 0x13)],
+        commitmentsOut: [filledBytes(32, 0x04), filledBytes(32, 0x14), filledBytes(32, 0x24)],
+        stealthData: [fakeStealth(0), fakeStealth(1)],
+        redeemAmounts: [50000n],
+        btcScripts: [btcScript],
+        requestNonces: [7n],
+      });
+
+      expect(data[0]).toBe(DISC_REDEEM);
+      expect(data.length).toBe(expected);
+    });
+  });
+
+  describe("field offsets match Rust parsing", () => {
+    it("stealth_data sits between commitments and redeem metadata", () => {
+      const st0 = fakeStealth(0);
+      const script = filledBytes(22, 0x76);
+      const amount = 12345n;
+      const nonce = 99n;
+
+      const data = buildRedeemInstructionData({
+        nInputs: 1,
+        nOutputs: 2,
+        nPublicOutputs: 1,
+        proofBytes: fakeProof(),
+        merkleRoot: filledBytes(32, 0x01),
+        boundParamsHash: filledBytes(32, 0x02),
+        nullifiers: [filledBytes(32, 0x03)],
+        commitmentsOut: [filledBytes(32, 0x04), filledBytes(32, 0x14)],
+        stealthData: [st0],
+        redeemAmounts: [amount],
+        btcScripts: [script],
+        requestNonces: [nonce],
+      });
+
+      const cd = data.slice(1);
+      const stealthOffset = 4 + 256 + 32 + 32 + 32 + 2 * 32;
+      expect(cd.slice(stealthOffset, stealthOffset + STEALTH_DATA_PER_OUTPUT)).toEqual(st0);
+
+      const amountOffset = stealthOffset + STEALTH_DATA_PER_OUTPUT;
+      const view = new DataView(cd.buffer, cd.byteOffset);
+      expect(view.getBigUint64(amountOffset, true)).toBe(amount);
+      expect(cd[amountOffset + 8]).toBe(script.length);
+      expect(cd.slice(amountOffset + 9, amountOffset + 9 + script.length)).toEqual(script);
+      expect(view.getBigUint64(amountOffset + 9 + script.length, true)).toBe(nonce);
     });
   });
 });

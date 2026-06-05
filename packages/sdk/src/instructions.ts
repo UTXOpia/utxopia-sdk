@@ -649,7 +649,7 @@ export function buildTransactInstruction(options: TransactInstructionOptions): I
  * - bound_params_hash: [u8; 32]
  * - nullifiers: [[u8; 32]; n_inputs]
  * - commitments_out: [[u8; 32]; n_outputs]
- * - stealth_data: [ephemeral_pub(32) + encrypted_amount(8)] x n_tree_outputs
+ * - stealth_data: [ephemeral_pub(32) + encrypted_amount(8) + encrypted_token_id(32)] x n_tree_outputs
  * - For each public output: amount(8) + script_len(1) + script(var) + nonce(8)
  */
 export function buildRedeemInstructionData(options: {
@@ -663,7 +663,7 @@ export function buildRedeemInstructionData(options: {
   boundParamsHash: Uint8Array;
   nullifiers: Uint8Array[];
   commitmentsOut: Uint8Array[];
-  /** Stealth data for tree outputs only (n_tree_outputs entries, 40 bytes each) */
+  /** Stealth data for tree outputs only (n_tree_outputs entries, 72 bytes each) */
   stealthData: Uint8Array[];
   /** Amount(s) to redeem in satoshis — single or array */
   redeemAmounts: bigint[];
@@ -715,8 +715,7 @@ export function buildRedeemInstructionData(options: {
     }
   }
 
-  // On-chain redeem uses 40-byte stealth data: ephemeral_pub(32) + encrypted_amount(8)
-  const STEALTH_DATA_SIZE = 40;
+  const STEALTH_DATA_SIZE = 72; // ephemeral_pub(32) + encrypted_amount(8) + encrypted_token_id(32)
   const proofSize = proofSource === 0 ? 256 : 0;
   let totalScriptLen = 0;
   for (const s of btcScripts) totalScriptLen += s.length;
@@ -763,7 +762,7 @@ export function buildRedeemInstructionData(options: {
     offset += 32;
   }
 
-  // Stealth data for tree outputs only (40 bytes each)
+  // Stealth data for tree outputs only (72 bytes each)
   for (const sd of stealthData) {
     data.set(sd.slice(0, STEALTH_DATA_SIZE), offset);
     offset += STEALTH_DATA_SIZE;
