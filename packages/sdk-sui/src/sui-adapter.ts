@@ -391,29 +391,26 @@ export class UTXOpiaSuiAdapter implements UTXOpiaChainAdapter {
     ]);
   }
 
-  async buildCompleteRedemptionTransaction(input: {
+  async buildMarkProcessingTransaction(input: {
     redemptionId: bigint | number;
-    btcTxid: Uint8Array;
+    selectedUtxos: Array<{ txid: Uint8Array; vout: number }>;
+    estimatedMinerFeeSats: bigint | number;
   }): Promise<SuiUnsignedTransaction> {
     if (!this.config.redemptionQueueObjectId) {
-      throw new Error("Sui redemption queue object ID is required to build completion PTBs");
+      throw new Error("Sui redemption queue object ID is required to build mark-processing PTBs");
     }
-    if (!this.config.redemptionCapObjectId || !this.config.redemptionCapVersion || !this.config.redemptionCapDigest) {
-      throw new Error("Sui redemption cap object ref is required to complete redemptions");
+    if (!this.config.utxoSetObjectId) {
+      throw new Error("Sui UTXO set object ID is required to build mark-processing PTBs");
     }
+    const redemptionCap = this.redemptionCapRef();
 
     const tx = new Transaction();
-    const redemptionCap = tx.objectRef({
-      objectId: this.config.redemptionCapObjectId,
-      version: this.config.redemptionCapVersion,
-      digest: this.config.redemptionCapDigest,
-    });
-
     tx.moveCall({
-      target: `${this.config.packageId}::redemption::complete_redemption`,
+      target: `${this.config.packageId}::redemption::mark_processing`,
       arguments: [
-        redemptionCap,
+        tx.objectRef(redemptionCap),
         this.sharedObject(tx, this.config.poolObjectId, this.config.poolInitialSharedVersion, false),
+        this.sharedObject(tx, this.config.utxoSetObjectId, this.config.utxoSetInitialSharedVersion, true),
         this.sharedObject(
           tx,
           this.config.redemptionQueueObjectId,
@@ -421,13 +418,90 @@ export class UTXOpiaSuiAdapter implements UTXOpiaChainAdapter {
           true,
         ),
         tx.pure.u64(input.redemptionId.toString()),
+        tx.pure("vector<vector<u8>>", input.selectedUtxos.map((utxo) => Array.from(utxo.txid))),
+        tx.pure("vector<u32>", input.selectedUtxos.map((utxo) => utxo.vout)),
+        tx.pure.u64(input.estimatedMinerFeeSats.toString()),
+      ],
+    });
+
+    return this.buildPtb(tx, "Sui redemption UTXO selection PTB", [
+      redemptionCap.objectId,
+      this.config.poolObjectId,
+      this.config.utxoSetObjectId,
+      this.config.redemptionQueueObjectId,
+    ]);
+  }
+
+  private redemptionCapRef() {
+    if (!this.config.redemptionCapObjectId || !this.config.redemptionCapVersion || !this.config.redemptionCapDigest) {
+      throw new Error("Sui redemption cap object ref is required for redemption operations");
+    }
+    return {
+      objectId: this.config.redemptionCapObjectId,
+      version: this.config.redemptionCapVersion,
+      digest: this.config.redemptionCapDigest,
+    };
+  }
+
+  async buildCompleteRedemptionTransaction(input: {
+    redemptionId: bigint | number;
+    btcTxid: Uint8Array;
+    blockHash?: Uint8Array;
+    txIndex?: number;
+    merkleSiblings?: Uint8Array[];
+    pathBits?: bigint | number;
+    rawTx?: Uint8Array;
+  }): Promise<SuiUnsignedTransaction> {
+    if (!this.config.redemptionQueueObjectId) {
+      throw new Error("Sui redemption queue object ID is required to build completion PTBs");
+    }
+    if (!this.config.utxoSetObjectId) {
+      throw new Error("Sui UTXO set object ID is required to build completion PTBs");
+    }
+    if (!this.config.lightClientObjectId) {
+      throw new Error("Sui BTC light client object ID is required to build completion PTBs");
+    }
+    if (!input.blockHash || input.txIndex === undefined || !input.rawTx) {
+      throw new Error("Sui redemption completion requires blockHash, txIndex, rawTx, and BTC SPV proof fields");
+    }
+
+    const tx = new Transaction();
+    const redemptionCap = this.redemptionCapRef();
+    const inclusion = tx.moveCall({
+      target: `${this.config.packageId}::btc_light_client::verify_tx_inclusion`,
+      arguments: [
+        this.sharedObject(tx, this.config.lightClientObjectId, this.config.lightClientInitialSharedVersion, false),
+        tx.pure.vector("u8", input.blockHash),
         tx.pure.vector("u8", input.btcTxid),
+        tx.pure.u32(input.txIndex),
+        tx.pure("vector<vector<u8>>", (input.merkleSiblings ?? []).map((bytes) => Array.from(bytes))),
+        tx.pure.u64((input.pathBits ?? 0).toString()),
+      ],
+    });
+
+    tx.moveCall({
+      target: `${this.config.packageId}::redemption::complete_redemption`,
+      arguments: [
+        tx.objectRef(redemptionCap),
+        this.sharedObject(tx, this.config.poolObjectId, this.config.poolInitialSharedVersion, false),
+        this.sharedObject(tx, this.config.utxoSetObjectId, this.config.utxoSetInitialSharedVersion, true),
+        this.sharedObject(
+          tx,
+          this.config.redemptionQueueObjectId,
+          this.config.redemptionQueueInitialSharedVersion,
+          true,
+        ),
+        tx.pure.u64(input.redemptionId.toString()),
+        inclusion,
+        tx.pure.vector("u8", input.rawTx),
       ],
     });
 
     return this.buildPtb(tx, "Sui BTC redemption completion PTB", [
-      this.config.redemptionCapObjectId,
+      redemptionCap.objectId,
+      this.config.lightClientObjectId,
       this.config.poolObjectId,
+      this.config.utxoSetObjectId,
       this.config.redemptionQueueObjectId,
     ]);
   }

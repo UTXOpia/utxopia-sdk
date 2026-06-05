@@ -171,10 +171,27 @@ test("builds Ika approval consume PTB transaction-kind bytes offline", async () 
   expect(tx.objectIds).toContain(objectId);
 });
 
+test("builds redemption UTXO selection PTB transaction-kind bytes offline", async () => {
+  const tx = await adapter().buildMarkProcessingTransaction({
+    redemptionId: 0,
+    selectedUtxos: [{ txid: new Uint8Array(32).fill(11), vout: 7 }],
+    estimatedMinerFeeSats: 800,
+  });
+
+  expect(tx.kind).toBe("sui-programmable-transaction-block");
+  expect(tx.bytes.length).toBeGreaterThan(0);
+  expect(tx.objectIds).toContain(objectId);
+});
+
 test("builds redemption completion PTB transaction-kind bytes offline", async () => {
   const tx = await adapter().buildCompleteRedemptionTransaction({
     redemptionId: 0,
     btcTxid: new Uint8Array(32).fill(10),
+    blockHash: new Uint8Array(32).fill(12),
+    txIndex: 0,
+    merkleSiblings: [],
+    pathBits: 0,
+    rawTx: new Uint8Array([1, 2, 3]),
   });
 
   expect(tx.kind).toBe("sui-programmable-transaction-block");
