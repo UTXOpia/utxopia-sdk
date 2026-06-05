@@ -1001,7 +1001,7 @@ export function buildUnshieldInstruction(options: UnshieldInstructionOptions): I
   };
 }
 
-// Legacy request_redemption/public_redeem instructions are reserved; use REDEEM for proof-checked BTC withdrawals.
+// Removed request_redemption/public_redeem instructions are reserved; use REDEEM for proof-checked BTC withdrawals.
 // =============================================================================
 // Timelocked Pool Update Instruction Builders
 // =============================================================================
