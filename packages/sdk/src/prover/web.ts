@@ -89,9 +89,6 @@ export function getCircuitPath(): string {
 
 // Lazy-loaded snarkjs module
 let snarkjs: any = null;
-const dynamicImport = new Function("specifier", "return import(specifier)") as (
-  specifier: string,
-) => Promise<any>;
 
 interface CircuitArtifact {
   wasmPath: string;
@@ -108,7 +105,7 @@ async function ensureSnarkjsLoaded(): Promise<void> {
   if (snarkjs) return;
 
   console.log("[Prover] Loading snarkjs module...");
-  snarkjs = await dynamicImport("snarkjs").catch(() => null);
+  snarkjs = await import("snarkjs").catch(() => null);
 
   if (!snarkjs) {
     throw new Error(
@@ -201,14 +198,7 @@ async function generateProofViaNodeSubprocess(
   if (typeof (globalThis as any).require === "function") {
     _require = (globalThis as any).require;
   } else {
-    // Hide the dynamic import from webpack so the browser bundle never tries
-    // to resolve `node:module`. This whole code path only fires under Node/bun,
-    // never in the browser.
-    const dynamicImport = new Function(
-      "specifier",
-      "return import(specifier)",
-    ) as (s: string) => Promise<any>;
-    const { createRequire } = await dynamicImport("node:module");
+    const { createRequire } = await import("node:module");
     _require = createRequire(import.meta.url);
   }
   const { execFileSync } = _require("child_process");
