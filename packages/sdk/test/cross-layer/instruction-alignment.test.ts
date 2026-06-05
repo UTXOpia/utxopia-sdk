@@ -12,15 +12,20 @@
  */
 
 import { describe, it, expect } from "bun:test";
+import {
+  buildCompleteDepositInstructionData,
+  buildShieldInstructionData,
+  INSTRUCTION_DISCRIMINATORS,
+} from "../../src/instructions";
 
 // =============================================================================
 // Contract-defined constants (from Rust source)
 // =============================================================================
 
-/** From contracts/programs/utxopia/src/instructions/shield.rs */
+/** From solana-programs/programs/utxopia/src/lib.rs and instruction modules. */
 const CONTRACT = {
   shield: {
-    disc: 29,
+    disc: 12,
     dataLen: 72, // amount(8) + npk(32) + ephemeral_pub(32)
     accountCount: 7,
     accounts: [
@@ -34,7 +39,7 @@ const CONTRACT = {
     ],
   },
   registerToken: {
-    disc: 28,
+    disc: 8,
     dataLen: 32, // service_fee(8) + min_deposit(8) + max_deposit(8) + deposit_cap(8)
     accountCount: 6,
     accounts: [
@@ -47,17 +52,17 @@ const CONTRACT = {
     ],
   },
   completeDeposit: {
-    disc: 1,
+    disc: 11,
     dataLen: 80, // sweep_txid(32) + block_height(8) + sweep_tx_size(4) + deposit_tx_size(4) + deposit_txid(32)
     accountCount: 14,
   },
   transact: {
-    disc: 14,
+    disc: 13,
     stealthDataPerOutput: 72, // ephemeral_pub(32) + encrypted_amount(8) + encrypted_token_id(32)
   },
   unshield: {
-    disc: 30,
-    fixedAccountCount: 9,
+    disc: 14,
+    fixedAccountCount: 8,
     stealthDataPerOutput: 72,
   },
 };
@@ -67,22 +72,17 @@ const CONTRACT = {
 // =============================================================================
 
 describe("Cross-layer: instruction alignment", () => {
-  describe("shield (disc=29)", () => {
+  describe("shield (disc=12)", () => {
     it("builds correct data format: amount(8) + npk(32) + ephemeral_pub(32) = 72 bytes", () => {
       const amount = 50000n;
       const npk = new Uint8Array(32).fill(0xab);
       const ephemeralPub = new Uint8Array(32).fill(0xcd);
 
-      // Build like shield-flow.tsx does
-      const ixData = new Uint8Array(73); // 1 disc + 72 data
-      ixData[0] = CONTRACT.shield.disc;
-      const view = new DataView(ixData.buffer);
-      view.setBigUint64(1, amount, true); // LE
-      ixData.set(npk, 9);
-      ixData.set(ephemeralPub, 41);
+      const ixData = buildShieldInstructionData({ amount, npk, ephemeralPub });
 
       // Verify disc
-      expect(ixData[0]).toBe(29);
+      expect(ixData[0]).toBe(CONTRACT.shield.disc);
+      expect(ixData[0]).toBe(INSTRUCTION_DISCRIMINATORS.SHIELD);
 
       // Verify amount at correct offset (contract reads data[0..8] after disc strip)
       const contractData = ixData.slice(1); // contract receives without disc
@@ -112,7 +112,7 @@ describe("Cross-layer: instruction alignment", () => {
     });
   });
 
-  describe("register_token (disc=28)", () => {
+  describe("register_token (disc=8)", () => {
     it("builds correct data format: 4x u64 LE = 32 bytes", () => {
       const serviceFee = 1000n;
       const minDeposit = 5000n;
@@ -143,7 +143,7 @@ describe("Cross-layer: instruction alignment", () => {
     });
   });
 
-  describe("complete_deposit (disc=1)", () => {
+  describe("complete_deposit (disc=11)", () => {
     it("has correct data layout: 80 bytes total", () => {
       const sweepTxid = new Uint8Array(32).fill(0xaa);
       const blockHeight = 2311n;
@@ -151,14 +151,15 @@ describe("Cross-layer: instruction alignment", () => {
       const depositTxSize = 300;
       const depositTxid = new Uint8Array(32).fill(0xbb);
 
-      const data = new Uint8Array(81);
-      data[0] = CONTRACT.completeDeposit.disc;
-      data.set(sweepTxid, 1);
-      const view = new DataView(data.buffer);
-      view.setBigUint64(33, blockHeight, true);
-      view.setUint32(41, sweepTxSize, true);
-      view.setUint32(45, depositTxSize, true);
-      data.set(depositTxid, 49);
+      const data = buildCompleteDepositInstructionData({
+        sweepTxid,
+        blockHeight: Number(blockHeight),
+        sweepTxSize,
+        depositTxSize,
+        depositTxid,
+      });
+      expect(data[0]).toBe(CONTRACT.completeDeposit.disc);
+      expect(data[0]).toBe(INSTRUCTION_DISCRIMINATORS.COMPLETE_DEPOSIT);
 
       const contractData = data.slice(1);
       expect(contractData.length).toBe(CONTRACT.completeDeposit.dataLen);
@@ -169,16 +170,18 @@ describe("Cross-layer: instruction alignment", () => {
     });
   });
 
-  describe("transact (disc=14)", () => {
+  describe("transact (disc=13)", () => {
     it("stealth data per output is 72 bytes: ephemeral(32) + amount(8) + token_id(32)", () => {
+      expect(CONTRACT.transact.disc).toBe(INSTRUCTION_DISCRIMINATORS.TRANSACT);
       expect(CONTRACT.transact.stealthDataPerOutput).toBe(72);
       expect(32 + 8 + 32).toBe(72);
     });
   });
 
-  describe("unshield (disc=30)", () => {
-    it("has 9 fixed accounts + n nullifier records", () => {
-      expect(CONTRACT.unshield.fixedAccountCount).toBe(9);
+  describe("unshield (disc=14)", () => {
+    it("has 8 fixed accounts before public recipients and nullifier records", () => {
+      expect(CONTRACT.unshield.disc).toBe(INSTRUCTION_DISCRIMINATORS.UNSHIELD);
+      expect(CONTRACT.unshield.fixedAccountCount).toBe(8);
     });
 
     it("stealth data per output matches transact", () => {
