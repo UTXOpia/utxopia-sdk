@@ -199,7 +199,8 @@ async function generateProofViaNodeSubprocess(
   if (typeof (globalThis as any).require === "function") {
     _require = (globalThis as any).require;
   } else {
-    const { createRequire } = await import("node:module");
+    const nodeModuleSpecifier = "node:" + "module";
+    const { createRequire } = await import(nodeModuleSpecifier);
     _require = createRequire(import.meta.url);
   }
   const { execFileSync } = _require("child_process");
