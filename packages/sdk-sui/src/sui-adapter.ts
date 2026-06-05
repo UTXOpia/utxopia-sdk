@@ -412,6 +412,12 @@ export class UTXOpiaSuiAdapter implements UTXOpiaChainAdapter {
       version: this.config.adminCapVersion,
       digest: this.config.adminCapDigest,
     });
+    const pool = this.sharedObject(
+      tx,
+      this.config.poolObjectId,
+      this.config.poolInitialSharedVersion,
+      false,
+    );
     const registry = this.sharedObject(
       tx,
       this.config.verifyingKeyRegistryObjectId,
@@ -424,6 +430,7 @@ export class UTXOpiaSuiAdapter implements UTXOpiaChainAdapter {
         target: `${this.config.packageId}::verifier::register_raw_key`,
         arguments: [
           adminCap,
+          pool,
           registry,
           tx.pure.u8(input.nInputs),
           tx.pure.u8(input.nOutputs),
@@ -437,6 +444,7 @@ export class UTXOpiaSuiAdapter implements UTXOpiaChainAdapter {
         target: `${this.config.packageId}::verifier::register_prepared_key`,
         arguments: [
           adminCap,
+          pool,
           registry,
           tx.pure.u8(input.nInputs),
           tx.pure.u8(input.nOutputs),
@@ -452,6 +460,7 @@ export class UTXOpiaSuiAdapter implements UTXOpiaChainAdapter {
 
     return this.buildPtb(tx, "Sui register prepared verifying key PTB", [
       this.config.adminCapObjectId,
+      this.config.poolObjectId,
       this.config.verifyingKeyRegistryObjectId,
     ]);
   }
