@@ -432,17 +432,6 @@ export class UTXOpiaSuiAdapter implements UTXOpiaChainAdapter {
     ]);
   }
 
-  private redemptionCapRef() {
-    if (!this.config.redemptionCapObjectId || !this.config.redemptionCapVersion || !this.config.redemptionCapDigest) {
-      throw new Error("Sui redemption cap object ref is required for redemption operations");
-    }
-    return {
-      objectId: this.config.redemptionCapObjectId,
-      version: this.config.redemptionCapVersion,
-      digest: this.config.redemptionCapDigest,
-    };
-  }
-
   async buildCompleteRedemptionTransaction(input: {
     redemptionId: bigint | number;
     btcTxid: Uint8Array;
