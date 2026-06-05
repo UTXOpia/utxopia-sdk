@@ -114,7 +114,21 @@ export interface BaseSignedTransaction {
   bytes: Uint8Array;
 }
 
-export type SignedTransaction = BaseSignedTransaction;
+export interface SolanaSignedTransaction extends BaseSignedTransaction {
+  chain: "solana";
+  kind: "solana-transaction";
+}
+
+export interface SuiSignedTransaction extends BaseSignedTransaction {
+  chain: "sui";
+  kind: "sui-programmable-transaction-block";
+  /** Base64-encoded Sui user signature returned by wallet/keypair signing. */
+  signature: string;
+}
+
+export type SignedTransaction =
+  | SolanaSignedTransaction
+  | SuiSignedTransaction;
 
 export interface TransactionResult {
   chain: UTXOpiaChain;

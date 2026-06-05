@@ -1,3 +1,4 @@
+import { SuiJsonRpcClient } from "@mysten/sui/jsonRpc";
 import { Transaction } from "@mysten/sui/transactions";
 import type {
   MerkleRoot,
@@ -8,6 +9,7 @@ import type {
   RegisterVerifyingKeyInput,
   ShieldInput,
   SignedTransaction,
+  SuiSignedTransaction,
   SuiUnsignedTransaction,
   TransactionResult,
   TransactInput,
@@ -569,8 +571,34 @@ export class UTXOpiaSuiAdapter implements UTXOpiaChainAdapter {
     ]);
   }
 
-  async submitTransaction(_: SignedTransaction): Promise<TransactionResult> {
-    throw new Error("Sui transaction submission is not implemented yet");
+  async submitTransaction(tx: SignedTransaction): Promise<TransactionResult> {
+    if (tx.chain !== "sui" || tx.kind !== "sui-programmable-transaction-block") {
+      throw new Error(`UTXOpiaSuiAdapter cannot submit ${tx.chain}/${tx.kind}`);
+    }
+
+    const signedTx = tx as SuiSignedTransaction;
+    if (!signedTx.signature) {
+      throw new Error("Sui transaction signature is required");
+    }
+
+    const client = new SuiJsonRpcClient({ url: this.config.rpcUrl, network: "testnet" });
+    const result = await client.executeTransactionBlock({
+      transactionBlock: signedTx.bytes,
+      signature: signedTx.signature,
+      options: {
+        showEffects: true,
+        showEvents: true,
+      },
+    });
+    const status = result.effects?.status.status;
+
+    return {
+      chain: this.chain,
+      digest: result.digest,
+      confirmed: status === "success",
+      checkpoint: result.checkpoint,
+      eventCursor: result.events?.at(-1)?.id?.eventSeq,
+    };
   }
 
   private async buildPtb(

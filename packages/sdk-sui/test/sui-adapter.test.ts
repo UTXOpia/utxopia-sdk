@@ -198,6 +198,14 @@ test("builds redemption completion PTB transaction-kind bytes offline", async ()
   expect(tx.bytes.length).toBeGreaterThan(0);
 });
 
+test("rejects unsigned Sui transaction submission", async () => {
+  await expect(adapter().submitTransaction({
+    chain: "sui",
+    kind: "sui-programmable-transaction-block",
+    bytes: new Uint8Array([1, 2, 3]),
+  } as any)).rejects.toThrow("signature is required");
+});
+
 test("loads native Ika Sui testnet config", () => {
   const config = defaultIkaConfig("testnet");
 
