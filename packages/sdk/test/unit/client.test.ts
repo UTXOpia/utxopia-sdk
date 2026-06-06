@@ -1,9 +1,13 @@
-import { describe, it, expect, beforeAll, afterEach } from "bun:test";
+import { describe, it, expect, afterEach, mock } from "bun:test";
 import { UTXOpiaClient } from "../../src/client";
+
+const originalFetch = globalThis.fetch;
 
 describe("UTXOpiaClient", () => {
   afterEach(() => {
     UTXOpiaClient.reset();
+    globalThis.fetch = originalFetch;
+    mock.restore();
   });
 
   describe("lifecycle", () => {
@@ -144,4 +148,50 @@ describe("UTXOpiaClient", () => {
       expect(config).toHaveProperty("solanaRpcUrl");
     });
   });
+
+  describe("relay submission", () => {
+    it("defaults to the Solana relay route for Solana app networks", async () => {
+      const fetchMock = mock(async () => ({
+        json: async () => ({ success: true, signature: "sol_sig" }),
+      }));
+      globalThis.fetch = fetchMock as any;
+
+      const client = await UTXOpiaClient.init({ network: "devnet-regtest" });
+      await expect(client.submitToRelay(minimalRelayPayload())).resolves.toEqual({
+        success: true,
+        signature: "sol_sig",
+      });
+
+      expect(fetchMock.mock.calls[0][0]).toBe("/api/sol/relay?network=devnet-regtest");
+    });
+
+    it("defaults to the Sui relay route for Sui app networks", async () => {
+      const fetchMock = mock(async () => ({
+        json: async () => ({ success: true, signature: "sui_sig" }),
+      }));
+      globalThis.fetch = fetchMock as any;
+
+      const client = await UTXOpiaClient.init({ network: "sui-regtest" });
+      await expect(client.submitToRelay(minimalRelayPayload())).resolves.toEqual({
+        success: true,
+        signature: "sui_sig",
+      });
+
+      expect(fetchMock.mock.calls[0][0]).toBe("/api/sui/relay?network=sui-regtest");
+    });
+  });
 });
+
+function minimalRelayPayload() {
+  return {
+    mode: "transfer" as const,
+    nInputs: 1,
+    nOutputs: 1,
+    proof: "00",
+    merkleRoot: "00".repeat(32),
+    boundParamsHash: "11".repeat(32),
+    nullifiers: ["22".repeat(32)],
+    commitmentsOut: ["33".repeat(32)],
+    stealthData: ["44".repeat(72)],
+  };
+}

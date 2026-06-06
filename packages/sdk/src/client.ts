@@ -95,9 +95,11 @@ export class UTXOpiaClient {
   private _tokenIdCache = new Map<string, bigint>();
   private _eventClient: EventClient | null = null;
   private _backendUrl: string;
+  private _appNetworkId: NetworkId;
 
-  private constructor(backendUrl: string) {
+  private constructor(backendUrl: string, appNetworkId: NetworkId) {
     this._backendUrl = backendUrl;
+    this._appNetworkId = appNetworkId;
   }
 
   // ─── Lifecycle ──────────────────────────────────────────────────
@@ -115,9 +117,11 @@ export class UTXOpiaClient {
     // Init Poseidon (required before any hashing)
     await initPoseidon();
 
-    const config = getConfig();
     const backendUrl = opts.backendUrl || "";
-    const client = new UTXOpiaClient(backendUrl);
+    const appNetworkId = opts.network ||
+      (typeof process !== "undefined" && (process.env?.NEXT_PUBLIC_NETWORK || process.env?.UTXOPIA_NETWORK) as NetworkId) ||
+      "devnet";
+    const client = new UTXOpiaClient(backendUrl, appNetworkId);
 
     _instance = client;
     return client;
@@ -510,7 +514,7 @@ export class UTXOpiaClient {
    * Submit a JoinSplit transaction to the relay backend.
    *
    * @param payload - Transaction data including proof, nullifiers, commitments, and mode-specific fields
-   * @param relayUrl - URL for the relay endpoint (default: "/api/sol/relay")
+   * @param relayUrl - URL for the relay endpoint (default is chain-aware from init network)
    */
   async submitToRelay(
     payload: {
@@ -541,7 +545,7 @@ export class UTXOpiaClient {
       btcScripts?: string[];
       requestNonces?: string[];
     },
-    relayUrl = "/api/sol/relay",
+    relayUrl = this.defaultRelayUrl(),
   ): Promise<{ success: boolean; signature?: string; error?: string }> {
     const resp = await fetch(relayUrl, {
       method: "POST",
@@ -563,6 +567,13 @@ export class UTXOpiaClient {
       });
     }
     return this._eventClient;
+  }
+
+  private defaultRelayUrl(): string {
+    const base = this._appNetworkId.startsWith("sui")
+      ? "/api/sui/relay"
+      : "/api/sol/relay";
+    return `${base}?network=${encodeURIComponent(this._appNetworkId)}`;
   }
 }
 
