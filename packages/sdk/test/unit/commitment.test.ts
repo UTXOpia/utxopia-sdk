@@ -22,7 +22,6 @@ import {
   hashNullifierSync,
 } from "../../src/poseidon";
 import { babyJubMul, BABYJUB_BASE8 } from "../../src/crypto";
-import { depositToNote } from "../../src/api";
 
 describe("Unified Model Commitment Computation", () => {
   beforeAll(async () => {
@@ -84,26 +83,6 @@ describe("Unified Model Commitment Computation", () => {
     expect(result.nullifier).toBe(expectedNullifier);
     expect(result.nullifierHash).toBe(expectedNullifierHash);
     expect(result.nullifierHashBytes).toHaveLength(32);
-  });
-
-  test("depositToNote computes real Poseidon commitment", async () => {
-    const result = await depositToNote(100_000n, "testnet");
-
-    // Verify commitment is computed (not zero)
-    expect(result.note.commitment).toBeGreaterThan(0n);
-    expect(result.note.commitmentBytes).toHaveLength(32);
-
-    // Verify commitment matches expected computation
-    const pubKey = babyJubMul(result.note.nullifier, BABYJUB_BASE8);
-    const expectedCommitment = computeUnifiedCommitmentSync(
-      pubKey.x,
-      result.note.amount,
-    );
-    expect(result.note.commitment).toBe(expectedCommitment);
-
-    // Verify taproot address is valid
-    expect(result.taprootAddress).toMatch(/^tb1p/);
-    expect(result.claimLink).toContain("note=");
   });
 
   test("commitment is deterministic for same inputs", () => {
@@ -208,4 +187,3 @@ describe("Circuit Compatibility", () => {
     expect(nullifierHash).toBeLessThan(BN254_FIELD_PRIME);
   });
 });
-

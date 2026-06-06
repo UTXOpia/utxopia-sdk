@@ -65,9 +65,6 @@ import {
 // Crypto helpers
 import { bytesToBigint } from "../src/crypto";
 
-// API
-import { depositToNote } from "../src/api";
-
 // ============================================================================
 // Setup
 // ============================================================================
@@ -592,25 +589,20 @@ describe("Stealth claim preparation", () => {
 // ============================================================================
 
 describe("Full deposit-to-claim integration", () => {
-  test("complete flow: depositToNote → stealth → tree → claim inputs", async () => {
+  test("complete flow: stealth deposit → tree → claim inputs", async () => {
     const keys = deriveKeysFromSeed(TEST_SEED);
     const meta = createStealthMetaAddress(keys);
 
-    // 1. Generate deposit credentials
-    const depositResult = await depositToNote(10_000n);
-    expect(depositResult.taprootAddress).toBeTruthy();
-    expect(depositResult.note).toBeTruthy();
-
-    // 2. Create stealth deposit
+    // 1. Create stealth deposit announcement.
     const deposit = await createStealthDeposit(meta, 10_000n, ZKBTC_TOKEN_ID);
     expect(deposit.commitment.length).toBe(32);
 
-    // 3. Add to tree
+    // 2. Add to tree.
     const tree = new CommitmentTreeIndex();
     const commitmentBigint = bytesToBigint(deposit.commitment);
     tree.addCommitment(commitmentBigint, 10_000n);
 
-    // 4. Scan
+    // 3. Scan.
     const announcements = [
       {
         ephemeralPub: deposit.ephemeralPub,
@@ -622,7 +614,7 @@ describe("Full deposit-to-claim integration", () => {
     const found = await scanAnnouncements(keys, announcements, ZKBTC_TOKEN_ID);
     expect(found.length).toBe(1);
 
-    // 5. Prepare claim
+    // 4. Prepare claim.
     const merkleProof = tree.getMerkleProof(commitmentBigint)!;
     const claim = await prepareClaimInputs(keys, found[0], {
       root: merkleProof.root,
@@ -670,9 +662,5 @@ describe("Full deposit-to-claim integration", () => {
 
     expect(allCommitments.size).toBe(3);
     expect(allNullifiers.size).toBe(3);
-  });
-
-  test("zero amount throws", async () => {
-    await expect(depositToNote(0n)).rejects.toThrow();
   });
 });

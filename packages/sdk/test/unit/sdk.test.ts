@@ -2,7 +2,7 @@
  * UTXOpia SDK Tests (Consolidated) — JoinSplit Architecture
  *
  * Core tests for all SDK functionality:
- * - DEPOSIT: depositToNote
+ * - DEPOSIT: createNonInteractiveDeposit
  * - TRANSFER: encodeClaimLink / decodeClaimLink
  * - KEYS: deriveKeysFromSeed, createStealthMetaAddress
  */
@@ -10,14 +10,26 @@
 import { expect, test, describe } from "bun:test";
 import { address, createSolanaRpc, getProgramDerivedAddress, type Address } from "@solana/kit";
 
-// Core SDK imports
-import { depositToNote } from "../../src/api";
 import { generateNote, formatBtc, parseBtc } from "../../src/note";
 import { encodeClaimLink, decodeClaimLink } from "../../src/claim-link";
 import { deriveKeysFromSeed, createStealthMetaAddress, encodeStealthMetaAddress, decodeStealthMetaAddress } from "../../src/keys";
-import { createStealthDeposit, scanAnnouncements } from "../../src/stealth";
+import { createNonInteractiveDeposit, createStealthDeposit, scanAnnouncements } from "../../src/stealth";
+import {
+  DEPOSIT_BITCOIN_NETWORK,
+  DEPOSIT_DESTINATION_CHAIN,
+  DEPOSIT_OP_RETURN_SIZE,
+  parseDepositOpReturn,
+} from "../../src/taproot";
 
 const ZKBTC_TOKEN_ID = 0x7a627463n;
+const TEST_REGTEST_GROUP_PUBKEY = Uint8Array.from(
+  Buffer.from("6c18d9968cc3612708aa5e2a6a10ee7ab57e0cfc6fa6cee7542546c84a00c9d2", "hex"),
+);
+const TEST_OP_RETURN_CONTEXT = {
+  destinationChain: DEPOSIT_DESTINATION_CHAIN.SOLANA,
+  bitcoinNetwork: DEPOSIT_BITCOIN_NETWORK.REGTEST,
+  poolTag: new Uint8Array(8).fill(0x7a),
+};
 import { createEmptyMerkleProof, TREE_DEPTH } from "../../src/merkle";
 import { poseidonHashSync, initPoseidon } from "../../src/poseidon";
 import { generateBabyJubKeyPair, babyJubMul, BABYJUB_BASE8, isOnBabyJubCurve } from "../../src/crypto";
@@ -28,23 +40,33 @@ const TEST_SEED = new Uint8Array(32).fill(0x42);
 // ============================================================================
 
 describe("DEPOSIT", () => {
-  test("deposit() generates valid credentials", async () => {
-    const result = await depositToNote(100_000n, "testnet");
+  test("createNonInteractiveDeposit() generates current BTC deposit metadata", async () => {
+    const keys = deriveKeysFromSeed(TEST_SEED);
+    const meta = createStealthMetaAddress(keys);
+    const result = await createNonInteractiveDeposit(
+      meta,
+      TEST_REGTEST_GROUP_PUBKEY,
+      "regtest",
+      undefined,
+      TEST_OP_RETURN_CONTEXT,
+    );
+    const parsed = parseDepositOpReturn(result.opReturnPayload);
 
-    expect(result.note.amount).toBe(100_000n);
-    expect(result.taprootAddress).toMatch(/^tb1p/);
-    expect(result.claimLink).toContain("utxopia.app/claim");
-    expect(result.displayAmount).toBe("0.00100000 BTC");
+    expect(result.btcAddress).toMatch(/^bcrt1p/);
+    expect(result.opReturnPayload).toHaveLength(DEPOSIT_OP_RETURN_SIZE);
+    expect(parsed).not.toBeNull();
+    expect(parsed!.destinationChain).toBe(DEPOSIT_DESTINATION_CHAIN.SOLANA);
+    expect(parsed!.bitcoinNetwork).toBe(DEPOSIT_BITCOIN_NETWORK.REGTEST);
+    expect(parsed!.ephemeralPub).toEqual(result.ephemeralPub);
+    expect(parsed!.npk).toEqual(result.npk);
   });
 
-  test("different deposits have unique addresses", async () => {
-    const d1 = await depositToNote(100_000n, "testnet");
-    const d2 = await depositToNote(100_000n, "testnet");
-    expect(d1.taprootAddress).not.toBe(d2.taprootAddress);
-  });
-
-  test("depositToNote function exists", () => {
-    expect(typeof depositToNote).toBe("function");
+  test("different non-interactive deposits have unique addresses", async () => {
+    const keys = deriveKeysFromSeed(TEST_SEED);
+    const meta = createStealthMetaAddress(keys);
+    const d1 = await createNonInteractiveDeposit(meta, TEST_REGTEST_GROUP_PUBKEY, "regtest", undefined, TEST_OP_RETURN_CONTEXT);
+    const d2 = await createNonInteractiveDeposit(meta, TEST_REGTEST_GROUP_PUBKEY, "regtest", undefined, TEST_OP_RETURN_CONTEXT);
+    expect(d1.btcAddress).not.toBe(d2.btcAddress);
   });
 });
 
@@ -196,4 +218,3 @@ describe("UTILITIES", () => {
     expect(proof.root.length).toBe(32);
   });
 });
-

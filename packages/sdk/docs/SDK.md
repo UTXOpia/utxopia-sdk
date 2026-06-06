@@ -299,20 +299,32 @@ for (const note of myNotes) {
 }
 ```
 
-### 3. Compatibility Deposit Helper
+### 3. Current BTC Deposit Helper
 
 ```typescript
-import { depositToNote, initPoseidon } from '@utxopia/sdk';
+import {
+  createNonInteractiveDeposit,
+  DEPOSIT_BITCOIN_NETWORK,
+  DEPOSIT_DESTINATION_CHAIN,
+} from '@utxopia/sdk';
 
-await initPoseidon();
-const deposit = await depositToNote(100_000n, 'testnet');
+const deposit = await createNonInteractiveDeposit(
+  recipientMeta,
+  groupPubKey,
+  'testnet',
+  undefined,
+  {
+    destinationChain: DEPOSIT_DESTINATION_CHAIN.SOLANA,
+    bitcoinNetwork: DEPOSIT_BITCOIN_NETWORK.TESTNET4,
+    poolTag,
+  },
+);
 
-console.log('Taproot address:', deposit.taprootAddress);
-console.log('Claim link:', deposit.claimLink);
-console.log('Display:', deposit.displayAmount); // "0.00100000 BTC"
+console.log('Taproot address:', deposit.btcAddress);
+console.log('OP_RETURN payload:', deposit.opReturnPayload);
 ```
 
-`depositToNote` is kept for compatibility tests and older claim-link tooling. New BTC deposits should use `createNonInteractiveDeposit`, because the current verifier expects the 73-byte compact OP_RETURN payload.
+Current BTC deposits use `createNonInteractiveDeposit`, because the verifier expects the 73-byte compact OP_RETURN payload.
 
 ### 4. JoinSplit Transfer
 
