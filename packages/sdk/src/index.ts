@@ -8,11 +8,11 @@
  *
  * ## Quick Start
  * ```typescript
- * import { depositToNote, generateJoinSplitProof, buildTransactInstruction } from '@utxopia/sdk';
+ * import { createNonInteractiveDeposit, generateJoinSplitProof, buildTransactInstruction } from '@utxopia/sdk';
  *
- * // 1. DEPOSIT: Generate credentials
- * const result = await depositToNote(100_000n); // 0.001 BTC
- * console.log('Send BTC to:', result.taprootAddress);
+ * // 1. DEPOSIT: Generate BTC address + compact OP_RETURN payload.
+ * const deposit = await createNonInteractiveDeposit(meta, groupPubKey, 'testnet', undefined, opReturnContext);
+ * console.log('Send BTC to:', deposit.btcAddress);
  *
  * // 2. TRANSACT: JoinSplit proof for private transfer
  * const proof = await generateJoinSplitProof(inputs);

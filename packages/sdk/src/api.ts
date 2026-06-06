@@ -1,8 +1,9 @@
 /**
- * UTXOpia Simplified API (JoinSplit Architecture)
+ * UTXOpia compatibility API (JoinSplit Architecture)
  *
- * DEPOSIT (BTC -> zkBTC):
- * - depositToNote: Generate deposit credentials (taproot address + claim link)
+ * Current BTC deposits should use createNonInteractiveDeposit(), which returns
+ * a BTC address plus the compact 73-byte OP_RETURN payload required by the
+ * backend/on-chain deposit verifier.
  *
  * All transfers and withdrawals use the JoinSplit transact instruction
  * via buildTransactInstruction() from the instructions module.
@@ -97,7 +98,10 @@ function validateAmount(amountSats: bigint, context: string): void {
 // ============================================================================
 
 /**
- * Generate deposit credentials (creates a claim link)
+ * Generate legacy fixed-amount deposit credentials (creates a claim link).
+ *
+ * @deprecated Use createNonInteractiveDeposit() with a DepositOpReturnContext.
+ * The current deposit verifier expects the 73-byte compact OP_RETURN payload.
  *
  * Creates a new note with random secrets, derives a taproot address for
  * receiving BTC, and creates a claim link for later claiming.

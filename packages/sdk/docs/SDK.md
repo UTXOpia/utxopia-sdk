@@ -110,8 +110,7 @@ Nullifier = Poseidon(nullifyingKey, leafIndex)
 ```typescript
 import {
   // === Deposit ===
-  depositToNote,                    // Generate BTC deposit credentials (legacy)
-  createNonInteractiveDeposit,      // npk-based deposit (any amount, no backend)
+  createNonInteractiveDeposit,      // npk-based BTC deposit (any amount, compact OP_RETURN)
 
   // === JoinSplit Prover ===
   initProver,                       // Initialize WASM prover
@@ -140,7 +139,7 @@ import {
   // === Stealth & Scanning ===
   createStealthDeposit,             // Create stealth deposit (interactive)
   scanUnifiedNotes,                 // Scan stealth announcement events (unified: deposits + transfers)
-  scanAnnouncements,                // Scan stealth announcements (legacy)
+  scanAnnouncements,                // Compatibility scanner for older announcement arrays
 
   // === PDA ===
   deriveVkRegistryPDA,              // VK registry for JoinSplit(N,M)
@@ -300,7 +299,7 @@ for (const note of myNotes) {
 }
 ```
 
-### 3. Legacy Deposit (with fixed amount)
+### 3. Compatibility Deposit Helper
 
 ```typescript
 import { depositToNote, initPoseidon } from '@utxopia/sdk';
@@ -312,6 +311,8 @@ console.log('Taproot address:', deposit.taprootAddress);
 console.log('Claim link:', deposit.claimLink);
 console.log('Display:', deposit.displayAmount); // "0.00100000 BTC"
 ```
+
+`depositToNote` is kept for compatibility tests and older claim-link tooling. New BTC deposits should use `createNonInteractiveDeposit`, because the current verifier expects the 73-byte compact OP_RETURN payload.
 
 ### 4. JoinSplit Transfer
 
