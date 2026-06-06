@@ -10,7 +10,7 @@ test("parses 73-byte UTXOpia OP_RETURN payload", () => {
   expect(parsed?.length).toBe(73);
 });
 
-test("extracts deposit OP_RETURN into ephemeral pubkey and npk", () => {
+test("extracts deposit OP_RETURN into canonical public key fields", () => {
   const payload = "53" + "aa".repeat(8) + "11".repeat(32) + "22".repeat(32);
   const tx: BitcoinTransaction = {
     txid: "tx",
@@ -38,7 +38,7 @@ test("extracts deposit OP_RETURN into ephemeral pubkey and npk", () => {
   expect(opReturn?.bitcoinNetwork).toBe(3);
   expect(opReturn?.poolTag).toEqual(new Uint8Array(8).fill(0xaa));
   expect(opReturn?.ephemeralPubkey.length).toBe(32);
-  expect(opReturn?.npk.length).toBe(32);
+  expect(opReturn?.notePublicKey.length).toBe(32);
   expect(opReturn?.ephemeralPubkey[0]).toBe(0x11);
-  expect(opReturn?.npk[0]).toBe(0x22);
+  expect(opReturn?.notePublicKey[0]).toBe(0x22);
 });

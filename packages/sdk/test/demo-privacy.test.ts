@@ -204,8 +204,8 @@ describe("compact deposit OP_RETURN embedding", () => {
     expect(parsed).not.toBeNull();
     expect(parsed!.destinationChain).toBe(DEPOSIT_DESTINATION_CHAIN.SOLANA);
     expect(parsed!.bitcoinNetwork).toBe(DEPOSIT_BITCOIN_NETWORK.REGTEST);
-    expect(parsed!.ephemeralPub).toEqual(ephemeralPub);
-    expect(parsed!.npk).toEqual(npk);
+    expect(parsed!.ephemeralPubkey).toEqual(ephemeralPub);
+    expect(parsed!.notePublicKey).toEqual(npk);
   });
 
   test("wraps the compact payload as an OP_PUSHBYTES_73 OP_RETURN script", () => {
@@ -237,8 +237,8 @@ describe("compact deposit OP_RETURN embedding", () => {
 
     expect(deposit.btcAddress).toStartWith("bcrt1p");
     expect(parsed).not.toBeNull();
-    expect(parsed!.ephemeralPub).toEqual(deposit.ephemeralPub);
-    expect(parsed!.npk).toEqual(deposit.npk);
+    expect(parsed!.ephemeralPubkey).toEqual(deposit.ephemeralPub);
+    expect(parsed!.notePublicKey).toEqual(deposit.npk);
   });
 });
 

@@ -57,8 +57,8 @@ describe("DEPOSIT", () => {
     expect(parsed).not.toBeNull();
     expect(parsed!.destinationChain).toBe(DEPOSIT_DESTINATION_CHAIN.SOLANA);
     expect(parsed!.bitcoinNetwork).toBe(DEPOSIT_BITCOIN_NETWORK.REGTEST);
-    expect(parsed!.ephemeralPub).toEqual(result.ephemeralPub);
-    expect(parsed!.npk).toEqual(result.npk);
+    expect(parsed!.ephemeralPubkey).toEqual(result.ephemeralPub);
+    expect(parsed!.notePublicKey).toEqual(result.npk);
   });
 
   test("different non-interactive deposits have unique addresses", async () => {

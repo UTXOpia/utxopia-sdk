@@ -26,11 +26,13 @@ export function extractUtxopiaDepositOpReturn(
       continue;
     }
 
+    const ephemeralPubkey = payload.slice(9, 41);
+    const notePublicKey = payload.slice(41, 73);
     return {
       ...header,
       poolTag: payload.slice(1, 9),
-      ephemeralPubkey: payload.slice(9, 41),
-      npk: payload.slice(41, 73),
+      ephemeralPubkey,
+      notePublicKey,
       rawPayload: payload,
     };
   }

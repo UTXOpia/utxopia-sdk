@@ -92,7 +92,7 @@ export interface UtxopiaDepositOpReturn {
   bitcoinNetwork: number;
   poolTag: Uint8Array;
   ephemeralPubkey: Uint8Array;
-  npk: Uint8Array;
+  notePublicKey: Uint8Array;
   rawPayload: Uint8Array;
 }
 

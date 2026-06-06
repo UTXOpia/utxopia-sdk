@@ -88,16 +88,16 @@ describe("buildDepositOpReturn / parseDepositOpReturn roundtrip", () => {
   };
 
   it("builds and parses a compact deposit payload", () => {
-    const ephemeralPub = new Uint8Array(32).fill(0x11);
-    const npk = new Uint8Array(32).fill(0x22);
+    const ephemeralPubkey = new Uint8Array(32).fill(0x11);
+    const notePublicKey = new Uint8Array(32).fill(0x22);
 
-    const payload = buildDepositOpReturn(ephemeralPub, npk, context);
+    const payload = buildDepositOpReturn(ephemeralPubkey, notePublicKey, context);
 
     expect(payload.length).toBe(DEPOSIT_OP_RETURN_SIZE);
     expect(payload[0]).toBe(0x53);
     expect(payload.slice(1, 9)).toEqual(context.poolTag);
-    expect(payload.slice(9, 41)).toEqual(ephemeralPub);
-    expect(payload.slice(41, 73)).toEqual(npk);
+    expect(payload.slice(9, 41)).toEqual(ephemeralPubkey);
+    expect(payload.slice(41, 73)).toEqual(notePublicKey);
 
     const parsed = parseDepositOpReturn(payload);
     expect(parsed).not.toBeNull();
@@ -105,20 +105,20 @@ describe("buildDepositOpReturn / parseDepositOpReturn roundtrip", () => {
     expect(parsed!.destinationChain).toBe(DEPOSIT_DESTINATION_CHAIN.SOLANA);
     expect(parsed!.bitcoinNetwork).toBe(DEPOSIT_BITCOIN_NETWORK.REGTEST);
     expect(parsed!.poolTag).toEqual(context.poolTag);
-    expect(parsed!.ephemeralPub).toEqual(ephemeralPub);
-    expect(parsed!.npk).toEqual(npk);
+    expect(parsed!.ephemeralPubkey).toEqual(ephemeralPubkey);
+    expect(parsed!.notePublicKey).toEqual(notePublicKey);
   });
 
-  it("rejects wrong-size ephemeralPub", () => {
+  it("rejects wrong-size ephemeralPubkey", () => {
     expect(() =>
       buildDepositOpReturn(new Uint8Array(16), new Uint8Array(32), context),
-    ).toThrow("ephemeralPub must be 32 bytes");
+    ).toThrow("ephemeralPubkey must be 32 bytes");
   });
 
-  it("rejects wrong-size npk", () => {
+  it("rejects wrong-size notePublicKey", () => {
     expect(() =>
       buildDepositOpReturn(new Uint8Array(32), new Uint8Array(16), context),
-    ).toThrow("npk must be 32 bytes");
+    ).toThrow("notePublicKey must be 32 bytes");
   });
 
   it("parseDepositOpReturn returns null for wrong length", () => {

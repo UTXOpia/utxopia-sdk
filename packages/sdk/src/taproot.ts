@@ -256,7 +256,7 @@ export type DepositBitcoinNetwork =
 
 export const DEPOSIT_OP_RETURN_VERSION = 1;
 export const DEPOSIT_POOL_TAG_SIZE = 8;
-/** OP_RETURN payload size for deposit: header(1) + poolTag(8) + ephemeralPub(32) + npk(32). */
+/** OP_RETURN payload size for deposit: header(1) + poolTag(8) + ephemeralPubkey(32) + notePublicKey(32). */
 export const DEPOSIT_OP_RETURN_SIZE = 73;
 
 export interface DepositOpReturnContext {
@@ -267,8 +267,8 @@ export interface DepositOpReturnContext {
 
 export interface ParsedDepositOpReturn extends DepositOpReturnContext {
   version: number;
-  ephemeralPub: Uint8Array;
-  npk: Uint8Array;
+  ephemeralPubkey: Uint8Array;
+  notePublicKey: Uint8Array;
 }
 
 /**
@@ -277,26 +277,26 @@ export interface ParsedDepositOpReturn extends DepositOpReturnContext {
  * Layout:
  *   [0]      header           — version + destination chain + Bitcoin network
  *   [1..9)   poolTag          — destination deployment tag
- *   [9..41)  ephemeralPub     — Ed25519 public key
- *   [41..73) npk              — Note public key (Poseidon hash)
+ *   [9..41)  ephemeralPubkey  — Ed25519 public key
+ *   [41..73) notePublicKey    — Note public key (Poseidon hash)
  *
  * Amount is no longer embedded — the on-chain program reads it from the BTC output.
  * The caller wraps this in an OP_RETURN script (0x6a + push opcode + payload).
  */
 export function buildDepositOpReturn(
-  ephemeralPub: Uint8Array,
-  npk: Uint8Array,
+  ephemeralPubkey: Uint8Array,
+  notePublicKey: Uint8Array,
   context: DepositOpReturnContext,
 ): Uint8Array {
-  if (ephemeralPub.length !== 32) throw new Error("ephemeralPub must be 32 bytes");
-  if (npk.length !== 32) throw new Error("npk must be 32 bytes");
+  if (ephemeralPubkey.length !== 32) throw new Error("ephemeralPubkey must be 32 bytes");
+  if (notePublicKey.length !== 32) throw new Error("notePublicKey must be 32 bytes");
   validateDepositOpReturnContext(context);
 
   const payload = new Uint8Array(DEPOSIT_OP_RETURN_SIZE);
   payload[0] = encodeDepositOpReturnHeader(context.destinationChain, context.bitcoinNetwork);
   payload.set(context.poolTag, 1);
-  payload.set(ephemeralPub, 1 + DEPOSIT_POOL_TAG_SIZE);
-  payload.set(npk, 1 + DEPOSIT_POOL_TAG_SIZE + 32);
+  payload.set(ephemeralPubkey, 1 + DEPOSIT_POOL_TAG_SIZE);
+  payload.set(notePublicKey, 1 + DEPOSIT_POOL_TAG_SIZE + 32);
   return payload;
 }
 
@@ -313,8 +313,8 @@ export function parseDepositOpReturn(data: Uint8Array): ParsedDepositOpReturn | 
   return {
     ...header,
     poolTag: data.slice(1, 1 + DEPOSIT_POOL_TAG_SIZE),
-    ephemeralPub: data.slice(1 + DEPOSIT_POOL_TAG_SIZE, 1 + DEPOSIT_POOL_TAG_SIZE + 32),
-    npk: data.slice(1 + DEPOSIT_POOL_TAG_SIZE + 32, DEPOSIT_OP_RETURN_SIZE),
+    ephemeralPubkey: data.slice(1 + DEPOSIT_POOL_TAG_SIZE, 1 + DEPOSIT_POOL_TAG_SIZE + 32),
+    notePublicKey: data.slice(1 + DEPOSIT_POOL_TAG_SIZE + 32, DEPOSIT_OP_RETURN_SIZE),
   };
 }
 
