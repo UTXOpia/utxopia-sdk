@@ -58,9 +58,9 @@ const ix = buildTransactInstruction({
 ┌──────────────┐      ┌──────────────────┐      ┌──────────────────┐
 │   Sender     │      │   Bitcoin        │      │   Solana         │
 │              │      │   Network        │      │                  │
-│  SDK creates │─BTC─▶│  Taproot addr    │      │  verify_stealth  │
+│  SDK creates │─BTC─▶│  Taproot addr    │      │  complete_deposit│
 │  npk + OP_   │      │  + OP_RETURN     │─SPV─▶│  _deposit        │
-│  RETURN      │      │  (64 bytes)      │      │                  │
+│  RETURN      │      │  (73 bytes)      │      │                  │
 └──────────────┘      └──────────────────┘      │  Computes:       │
                                                  │  Poseidon(npk,   │
 ┌──────────────┐                                │  token, amount)  │
@@ -169,7 +169,7 @@ import {
 interface NonInteractiveDepositResult {
   btcAddress: string;              // Taproot address to send BTC to
   depositOutputKey: Uint8Array;    // Tweaked output key (32 bytes)
-  opReturnPayload: Uint8Array;     // 64 bytes: ephemeralPub || npk
+  opReturnPayload: Uint8Array;     // 73 bytes: header || poolTag || ephemeralPub || npk
   npk: Uint8Array;                 // Note public key (32 bytes)
   ephemeralPub: Uint8Array;        // Ed25519 ephemeral key (32 bytes)
 }
@@ -256,18 +256,30 @@ interface ScannedNote {
 The recommended deposit method. User can send **any amount** of BTC — the commitment is computed on-chain.
 
 ```typescript
-import { createNonInteractiveDeposit, createStealthMetaAddress, initPoseidon } from '@utxopia/sdk';
+import {
+  DEPOSIT_BITCOIN_NETWORK,
+  DEPOSIT_DESTINATION_CHAIN,
+  createNonInteractiveDeposit,
+  createStealthMetaAddress,
+  initPoseidon,
+} from '@utxopia/sdk';
 
 await initPoseidon();
 
 // Recipient shares their stealth meta-address (96 bytes)
 const meta = createStealthMetaAddress(recipientKeys);
 
-// Sender creates deposit (no backend API call needed)
-const deposit = await createNonInteractiveDeposit(meta, groupPubKey, 'testnet');
+// Sender creates deposit (no backend API call needed). The 8-byte poolTag
+// is sha256(destination deployment identity)[0..8].
+const poolTag = computePoolTagForYourDeployment(); // Uint8Array(8)
+const deposit = await createNonInteractiveDeposit(meta, groupPubKey, 'testnet', undefined, {
+  destinationChain: DEPOSIT_DESTINATION_CHAIN.SOLANA,
+  bitcoinNetwork: DEPOSIT_BITCOIN_NETWORK.TESTNET4,
+  poolTag,
+});
 
 console.log('Send BTC to:', deposit.btcAddress);
-console.log('OP_RETURN payload (64 bytes):', deposit.opReturnPayload);
+console.log('OP_RETURN payload (73 bytes):', deposit.opReturnPayload);
 // User can send ANY amount to this address
 ```
 
