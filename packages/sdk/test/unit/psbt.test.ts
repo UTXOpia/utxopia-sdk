@@ -1,5 +1,7 @@
 import { describe, it, expect } from "bun:test";
-import { selectUtxos, estimateDepositFee } from "../../src/psbt";
+import * as btc from "@scure/btc-signer";
+import { hex } from "@scure/base";
+import { selectUtxos, estimateDepositFee, buildDepositPsbt } from "../../src/psbt";
 import type { UtxoDescriptor } from "../../src/psbt";
 
 function makeUtxo(value: number, label: string = "a"): UtxoDescriptor {
@@ -8,6 +10,15 @@ function makeUtxo(value: number, label: string = "a"): UtxoDescriptor {
     vout: 0,
     value,
     scriptPubkeyHex: "5120" + "bb".repeat(32), // P2TR
+  };
+}
+
+function makeP2wpkhUtxo(value: number, label: string = "a"): UtxoDescriptor {
+  return {
+    txid: label.repeat(64).slice(0, 64),
+    vout: 0,
+    value,
+    scriptPubkeyHex: "0014" + "bb".repeat(20),
   };
 }
 
@@ -124,5 +135,27 @@ describe("selectUtxos", () => {
     // At feeRate=10, 1 input fee = 2300, so 10230 is NOT enough
     const utxos = [makeUtxo(10_230, "a")];
     expect(() => selectUtxos(utxos, 10_000, 10)).toThrow("Insufficient funds");
+  });
+});
+
+describe("buildDepositPsbt", () => {
+  it("emits the compact deposit OP_RETURN as OP_PUSHBYTES_73", () => {
+    const opReturnPayload = new Uint8Array(73).fill(0x33);
+
+    const result = buildDepositPsbt({
+      senderUtxos: [makeP2wpkhUtxo(100_000, "a")],
+      depositAddress: "tb1pksj664hdqkzvw2tlfvqshnevxt2qdutk47p9z964dkcsxazmf0vsjas4n4",
+      depositAmountSats: 10_000,
+      opReturnPayload,
+      changeAddress: "tb1pksj664hdqkzvw2tlfvqshnevxt2qdutk47p9z964dkcsxazmf0vsjas4n4",
+      feeRate: 1,
+      network: "testnet",
+    });
+
+    const tx = btc.Transaction.fromPSBT(hex.decode(result.psbtHex), { allowUnknownOutputs: true });
+    const opReturnOutput = tx.getOutput(1);
+
+    expect(opReturnOutput.script).toEqual(new Uint8Array([0x6a, 0x49, ...opReturnPayload]));
+    expect(opReturnOutput.amount).toBe(0n);
   });
 });

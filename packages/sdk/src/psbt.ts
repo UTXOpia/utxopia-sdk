@@ -12,7 +12,7 @@
 
 import * as btc from "@scure/btc-signer";
 import { hex } from "@scure/base";
-import { DEPOSIT_OP_RETURN_SIZE } from "./taproot";
+import { DEPOSIT_OP_RETURN_SIZE, createOpReturnScriptFromPayload } from "./taproot";
 
 // =============================================================================
 // Types
@@ -204,11 +204,7 @@ export function buildDepositPsbt(params: BuildDepositPsbtParams): BuildDepositPs
   tx.addOutputAddress(depositAddress, BigInt(depositAmountSats), btcNetwork);
 
   // Output 2: OP_RETURN with compact deposit payload.
-  const opReturnScript = new Uint8Array(2 + opReturnPayload.length);
-  opReturnScript[0] = 0x6a; // OP_RETURN
-  opReturnScript[1] = opReturnPayload.length; // push 72 bytes (72 = 0x48)
-  opReturnScript.set(opReturnPayload, 2);
-
+  const opReturnScript = createOpReturnScriptFromPayload(opReturnPayload);
   tx.addOutput({
     script: opReturnScript,
     amount: 0n,
