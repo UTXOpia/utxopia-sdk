@@ -1,7 +1,7 @@
 /**
  * Demo Privacy Tests
  *
- * Comprehensive demo tests exercising the full deposit flow, OP_RETURN commitment
+ * Comprehensive demo tests exercising the full deposit flow, compact deposit OP_RETURN
  * embedding, and Railgun-style privacy patterns (shielded transfers, note splitting,
  * view-only scanning, HD recovery).
  *
@@ -29,6 +29,7 @@ import {
 // Stealth
 import {
   createStealthDeposit,
+  createNonInteractiveDeposit,
   scanAnnouncements,
   scanAnnouncementsViewOnly,
   exportViewOnlyKeys,
@@ -41,10 +42,12 @@ const ZKBTC_TOKEN_ID = 0x7a627463n;
 // Taproot
 import {
   deriveTaprootAddress,
-  createOpReturnScript,
-  parseOpReturnCommitment,
-  buildMockBtcTransaction,
-  createP2TRScriptPubkey,
+  buildDepositOpReturn,
+  parseDepositOpReturn,
+  createOpReturnScriptFromPayload,
+  DEPOSIT_BITCOIN_NETWORK,
+  DEPOSIT_DESTINATION_CHAIN,
+  DEPOSIT_OP_RETURN_SIZE,
 } from "../src/taproot";
 
 // Commitment tree
@@ -74,6 +77,7 @@ import { bigintToBytes, bytesToBigint, bytesToHex } from "../src/crypto";
 const DEMO_SEED_ALICE = new Uint8Array(32).fill(0xa1);
 const DEMO_SEED_BOB = new Uint8Array(32).fill(0xb2);
 const DEMO_SEED_CAROL = new Uint8Array(32).fill(0xc3);
+const DEMO_REGTEST_GROUP_PUBKEY_HEX = "6c18d9968cc3612708aa5e2a6a10ee7ab57e0cfc6fa6cee7542546c84a00c9d2";
 
 function log(label: string, value: unknown): void {
   console.log(`  [demo] ${label}: ${typeof value === "bigint" ? "0x" + value.toString(16).slice(0, 16) + "..." : value}`);
@@ -175,102 +179,64 @@ describe("Demo: Full deposit flow walkthrough", () => {
 });
 
 // ============================================================================
-// Block 2: OP_RETURN Commitment Embedding
+// Block 2: Compact Deposit OP_RETURN Embedding
 // ============================================================================
 
-describe("OP_RETURN commitment embedding", () => {
-  test("createOpReturnScript produces correct 34-byte script", () => {
-    const commitment = new Uint8Array(32).fill(0xab);
-    const script = createOpReturnScript(commitment);
+describe("compact deposit OP_RETURN embedding", () => {
+  const opReturnContext = {
+    destinationChain: DEPOSIT_DESTINATION_CHAIN.SOLANA,
+    bitcoinNetwork: DEPOSIT_BITCOIN_NETWORK.REGTEST,
+    poolTag: new Uint8Array(8).fill(0x7a),
+  };
 
-    expect(script.length).toBe(34);
-    expect(script[0]).toBe(0x6a); // OP_RETURN
-    expect(script[1]).toBe(0x20); // Push 32
-    expect(script.slice(2)).toEqual(commitment);
-  });
+  test("buildDepositOpReturn produces the current 73-byte payload", () => {
+    const ephemeralPub = new Uint8Array(32).fill(0xab);
+    const npk = new Uint8Array(32).fill(0xcd);
+    const payload = buildDepositOpReturn(ephemeralPub, npk, opReturnContext);
 
-  test("parseOpReturnCommitment roundtrip", () => {
-    const commitment = new Uint8Array(32);
-    for (let i = 0; i < 32; i++) commitment[i] = i;
+    expect(payload.length).toBe(DEPOSIT_OP_RETURN_SIZE);
+    expect(payload[0]).toBe(0x53);
+    expect(payload.slice(1, 9)).toEqual(opReturnContext.poolTag);
 
-    const script = createOpReturnScript(commitment);
-    const parsed = parseOpReturnCommitment(script);
-
+    const parsed = parseDepositOpReturn(payload);
     expect(parsed).not.toBeNull();
-    expect(parsed).toEqual(commitment);
+    expect(parsed!.destinationChain).toBe(DEPOSIT_DESTINATION_CHAIN.SOLANA);
+    expect(parsed!.bitcoinNetwork).toBe(DEPOSIT_BITCOIN_NETWORK.REGTEST);
+    expect(parsed!.ephemeralPub).toEqual(ephemeralPub);
+    expect(parsed!.npk).toEqual(npk);
   });
 
-  test("rejects non-OP_RETURN scripts (returns null for P2TR)", () => {
-    const outputKey = new Uint8Array(32).fill(0x42);
-    const p2trScript = createP2TRScriptPubkey(outputKey);
+  test("wraps the compact payload as an OP_PUSHBYTES_73 OP_RETURN script", () => {
+    const payload = buildDepositOpReturn(
+      new Uint8Array(32).fill(0x11),
+      new Uint8Array(32).fill(0x22),
+      opReturnContext,
+    );
+    const script = createOpReturnScriptFromPayload(payload);
 
-    const result = parseOpReturnCommitment(p2trScript);
-    expect(result).toBeNull();
+    expect(script.length).toBe(75);
+    expect(script[0]).toBe(0x6a);
+    expect(script[1]).toBe(DEPOSIT_OP_RETURN_SIZE);
+    expect(script.slice(2)).toEqual(payload);
   });
 
-  test("buildMockBtcTransaction includes OP_RETURN with commitment", () => {
-    const commitment = new Uint8Array(32).fill(0xcd);
-    const outputKey = new Uint8Array(32).fill(0x42);
-    const amountSats = 50_000n;
-
-    const rawTx = buildMockBtcTransaction(amountSats, outputKey, commitment);
-    expect(rawTx.length).toBeGreaterThan(0);
-
-    // Verify tx contains the commitment bytes
-    const txHex = bytesToHex(rawTx);
-    const commitmentHex = bytesToHex(commitment);
-    expect(txHex).toContain(commitmentHex);
-  });
-
-  test("mock tx includes P2TR output with correct amount (LE)", () => {
-    const commitment = new Uint8Array(32).fill(0xab);
-    const outputKey = new Uint8Array(32).fill(0x99);
-    const amountSats = 10_000n;
-
-    const rawTx = buildMockBtcTransaction(amountSats, outputKey, commitment);
-
-    // Version = 0x02000000 at offset 0
-    expect(rawTx[0]).toBe(0x02);
-
-    // Find P2TR output: after input section
-    // version(4) + inputCount(1) + input(45) + outputCount(1) = offset 51
-    // Output 0: amount(8) + scriptLen(1) + script(34)
-    const amountOffset = 51;
-    const view = new DataView(rawTx.buffer, rawTx.byteOffset + amountOffset, 8);
-    expect(view.getBigUint64(0, true)).toBe(amountSats);
-
-    // P2TR script starts at offset 51+8+1 = 60
-    expect(rawTx[60]).toBe(0x51); // OP_1
-    expect(rawTx[61]).toBe(0x20); // Push 32
-  });
-
-  test("full flow: derive address -> commitment -> embed OP_RETURN -> extract -> verify match", async () => {
+  test("full flow: create non-interactive deposit -> parse compact OP_RETURN", async () => {
     const aliceKeys = deriveKeysFromSeed(DEMO_SEED_ALICE);
     const aliceMeta = createStealthMetaAddress(aliceKeys);
-    const depositAmount = 75_000n;
-
-    // Create stealth deposit (generates commitment)
-    const deposit = await createStealthDeposit(aliceMeta, depositAmount, ZKBTC_TOKEN_ID);
-
-    // Derive taproot address from commitment
-    const taproot = deriveTaprootAddress(deposit.commitment, "testnet");
-
-    // Build mock BTC tx with OP_RETURN embedding
-    const rawTx = buildMockBtcTransaction(
-      depositAmount,
-      taproot.outputKey,
-      deposit.commitment,
+    const groupPubKey = Uint8Array.from(Buffer.from(DEMO_REGTEST_GROUP_PUBKEY_HEX, "hex"));
+    const deposit = await createNonInteractiveDeposit(
+      aliceMeta,
+      groupPubKey,
+      "regtest",
+      undefined,
+      opReturnContext,
     );
+    const parsed = parseDepositOpReturn(deposit.opReturnPayload);
 
-    // Extract commitment from OP_RETURN in tx
-    // Output 1 script starts at: version(4) + inputCount(1) + input(45) + outputCount(1)
-    //   + out0(8+1+34) + out1_amount(8) + out1_scriptLen(1) = 103
-    const scriptOffset = 51 + 43 + 9; // = 103
-    const opReturnScript = rawTx.slice(scriptOffset, scriptOffset + 34);
-    const extractedCommitment = parseOpReturnCommitment(opReturnScript);
-
-    expect(extractedCommitment).not.toBeNull();
-    expect(extractedCommitment).toEqual(deposit.commitment);
+    expect(deposit.btcAddress).toStartWith("bcrt1p");
+    expect(parsed).not.toBeNull();
+    expect(parsed!.ephemeralPub).toEqual(deposit.ephemeralPub);
+    expect(parsed!.npk).toEqual(deposit.npk);
   });
 });
 
