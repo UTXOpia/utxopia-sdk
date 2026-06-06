@@ -34,6 +34,7 @@ import {
   scanAnnouncementsViewOnly,
   exportViewOnlyKeys,
   prepareClaimInputs,
+  ANNOUNCEMENT_TYPE_TRANSFER,
 } from "../src/stealth";
 
 // ZKBTC_TOKEN_ID was removed — use a test constant matching old value
@@ -135,6 +136,7 @@ describe("Demo: Full deposit flow walkthrough", () => {
 
     // 6. Scan announcements (Alice detects her deposit)
     const announcements = [{
+      announcementType: ANNOUNCEMENT_TYPE_TRANSFER,
       ephemeralPub: deposit.ephemeralPub,
       encryptedAmount: deposit.encryptedAmount,
       commitment: deposit.commitment,
@@ -377,6 +379,7 @@ describe("Railgun-style view-only scanning", () => {
 
     const deposit = await createStealthDeposit(aliceMeta, 42_000n, ZKBTC_TOKEN_ID);
     const announcements = [{
+      announcementType: ANNOUNCEMENT_TYPE_TRANSFER,
       ephemeralPub: deposit.ephemeralPub,
       encryptedAmount: deposit.encryptedAmount,
       commitment: deposit.commitment,
@@ -387,6 +390,13 @@ describe("Railgun-style view-only scanning", () => {
     expect(found).toHaveLength(1);
     expect(found[0].amount).toBe(42_000n);
     expect(found[0].leafIndex).toBe(0);
+
+    const malformed = await scanAnnouncementsViewOnly(
+      viewOnly,
+      [{ ...announcements[0], announcementType: 99 }],
+      ZKBTC_TOKEN_ID,
+    );
+    expect(malformed).toHaveLength(0);
   });
 
   test("view-only keys cannot prepare claim (needs spending key)", async () => {
@@ -398,6 +408,7 @@ describe("Railgun-style view-only scanning", () => {
 
     // View-only scan works
     const voAnnouncements = [{
+      announcementType: ANNOUNCEMENT_TYPE_TRANSFER,
       ephemeralPub: deposit.ephemeralPub,
       encryptedAmount: deposit.encryptedAmount,
       commitment: deposit.commitment,
@@ -439,6 +450,7 @@ describe("Railgun-style view-only scanning", () => {
     );
 
     const announcements = deposits.map((d, i) => ({
+      announcementType: ANNOUNCEMENT_TYPE_TRANSFER,
       ephemeralPub: d.ephemeralPub,
       encryptedAmount: d.encryptedAmount,
       commitment: d.commitment,
@@ -523,6 +535,7 @@ describe("Demo: multi-party privacy scenario", () => {
     // Step 1: Alice deposits 100k sats
     const aliceDeposit = await createStealthDeposit(aliceMeta, 100_000n, ZKBTC_TOKEN_ID);
     const aliceAnn = [{
+      announcementType: ANNOUNCEMENT_TYPE_TRANSFER,
       ephemeralPub: aliceDeposit.ephemeralPub,
       encryptedAmount: aliceDeposit.encryptedAmount,
       commitment: aliceDeposit.commitment,
@@ -537,6 +550,7 @@ describe("Demo: multi-party privacy scenario", () => {
 
     // Bob scans and finds his 70k
     const bobAnn = [{
+      announcementType: ANNOUNCEMENT_TYPE_TRANSFER,
       ephemeralPub: bobOutput.ephemeralPub,
       encryptedAmount: bobOutput.encryptedAmount,
       commitment: bobOutput.commitment,
@@ -548,6 +562,7 @@ describe("Demo: multi-party privacy scenario", () => {
 
     // Alice scans change
     const aliceChangeAnn = [{
+      announcementType: ANNOUNCEMENT_TYPE_TRANSFER,
       ephemeralPub: aliceChangeOutput.ephemeralPub,
       encryptedAmount: aliceChangeOutput.encryptedAmount,
       commitment: aliceChangeOutput.commitment,
@@ -582,6 +597,7 @@ describe("Demo: multi-party privacy scenario", () => {
       ...bobAnn,
       ...aliceChangeAnn,
       ...bobSplitOutputs.map((o, i) => ({
+        announcementType: ANNOUNCEMENT_TYPE_TRANSFER,
         ephemeralPub: o.ephemeralPub,
         encryptedAmount: o.encryptedAmount,
         commitment: o.commitment,

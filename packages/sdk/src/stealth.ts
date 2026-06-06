@@ -40,6 +40,10 @@ export const ANNOUNCEMENT_TYPE_DEPOSIT = 0;
 /** Announcement type: transfer (XOR-encrypted amount) */
 export const ANNOUNCEMENT_TYPE_TRANSFER = 1;
 
+function isKnownAnnouncementType(value: number): boolean {
+  return value === ANNOUNCEMENT_TYPE_DEPOSIT || value === ANNOUNCEMENT_TYPE_TRANSFER;
+}
+
 // ========== Imports ==========
 
 import { sha256 } from "@noble/hashes/sha2.js";
@@ -657,12 +661,12 @@ export interface ViewOnlyScannedNote {
 
 /**
  * Scan announcements with VIEW-ONLY keys.
- * Supports both legacy format and unified format (with announcementType).
+ * Latest announcement rows must carry an explicit type.
  */
 export async function scanAnnouncementsViewOnly(
   viewOnlyKeys: ViewOnlyKeys,
   announcements: {
-    announcementType?: number;
+    announcementType: number;
     ephemeralPub: Uint8Array;
     encryptedAmount: Uint8Array;
     commitment: Uint8Array;
@@ -682,6 +686,10 @@ export async function scanAnnouncementsViewOnly(
 
   for (const ann of announcements) {
     try {
+      if (!isKnownAnnouncementType(ann.announcementType)) {
+        continue;
+      }
+
       const sharedSecret = x25519Ecdh(viewOnlyKeys.viewingPrivKey, ann.ephemeralPub);
 
       // Get amount based on announcement type
@@ -852,6 +860,10 @@ export async function scanUnifiedNotes(
 
   for (const ann of announcements) {
     try {
+      if (!isKnownAnnouncementType(ann.announcementType)) {
+        continue;
+      }
+
       // X25519 ECDH with viewing key
       const sharedSecret = x25519Ecdh(keys.viewingPrivKey, ann.ephemeralPub);
 
