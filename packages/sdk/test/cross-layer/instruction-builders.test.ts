@@ -372,6 +372,20 @@ describe("Cross-layer: buildTransactInstructionData (disc=13)", () => {
       ).toThrow("stealth");
     });
 
+    it("rejects stealth data with the wrong fixed record length", () => {
+      expect(() =>
+        buildTransactInstructionData({
+          nInputs: 1, nOutputs: 1,
+          proofBytes: fakeProof(),
+          merkleRoot: filledBytes(32, 0x01),
+          boundParamsHash: filledBytes(32, 0x02),
+          nullifiers: [filledBytes(32, 0x03)],
+          commitmentsOut: [filledBytes(32, 0x04)],
+          stealthData: [filledBytes(71, 0xee)],
+        })
+      ).toThrow("72 bytes");
+    });
+
     it("max variant 5x5 produces correct length", () => {
       const n = 5, m = 5;
       const expected = 1 + 4 + 256 + 32 + 32 + n * 32 + m * 32 + m * 72;
@@ -703,6 +717,21 @@ describe("Cross-layer: buildUnshieldInstructionData (disc=14)", () => {
         })
       ).toThrow("stealth");
     });
+
+    it("rejects tree-output stealth data with the wrong fixed record length", () => {
+      expect(() =>
+        buildUnshieldInstructionData({
+          nInputs: 1, nOutputs: 2,
+          proofBytes: fakeProof(),
+          merkleRoot: filledBytes(32, 0x01),
+          boundParamsHash: filledBytes(32, 0x02),
+          nullifiers: [filledBytes(32, 0x03)],
+          commitmentsOut: [filledBytes(32, 0x04), filledBytes(32, 0x14)],
+          stealthData: [filledBytes(73, 0xee)],
+          unshieldAmounts: [50000n],
+        })
+      ).toThrow("72 bytes");
+    });
   });
 });
 
@@ -772,6 +801,27 @@ describe("Cross-layer: buildRedeemInstructionData (disc=15)", () => {
       expect(cd[amountOffset + 8]).toBe(script.length);
       expect(cd.slice(amountOffset + 9, amountOffset + 9 + script.length)).toEqual(script);
       expect(view.getBigUint64(amountOffset + 9 + script.length, true)).toBe(nonce);
+    });
+  });
+
+  describe("edge cases", () => {
+    it("rejects tree-output stealth data with the wrong fixed record length", () => {
+      expect(() =>
+        buildRedeemInstructionData({
+          nInputs: 1,
+          nOutputs: 2,
+          nPublicOutputs: 1,
+          proofBytes: fakeProof(),
+          merkleRoot: filledBytes(32, 0x01),
+          boundParamsHash: filledBytes(32, 0x02),
+          nullifiers: [filledBytes(32, 0x03)],
+          commitmentsOut: [filledBytes(32, 0x04), filledBytes(32, 0x14)],
+          stealthData: [filledBytes(71, 0xee)],
+          redeemAmounts: [50000n],
+          btcScripts: [filledBytes(34, 0x51)],
+          requestNonces: [7n],
+        })
+      ).toThrow("72 bytes");
     });
   });
 });

@@ -132,6 +132,16 @@ function addressToBytes(addr: Address): Uint8Array {
   return bs58Decode(addr.toString());
 }
 
+const STEALTH_DATA_PER_OUTPUT = 72; // ephemeral_pub(32) + encrypted_amount(8) + encrypted_token_id(32)
+
+function assertStealthDataRecordLengths(stealthData: Uint8Array[]): void {
+  for (let i = 0; i < stealthData.length; i++) {
+    if (stealthData[i].length !== STEALTH_DATA_PER_OUTPUT) {
+      throw new Error(`Stealth data ${i} must be ${STEALTH_DATA_PER_OUTPUT} bytes, got ${stealthData[i].length}`);
+    }
+  }
+}
+
 // =============================================================================
 // Shield Instruction Builder (disc=12)
 // =============================================================================
@@ -505,8 +515,8 @@ export function buildTransactInstructionData(options: {
   if (stealthData.length !== nOutputs) {
     throw new Error(`Expected ${nOutputs} stealth data entries, got ${stealthData.length}`);
   }
+  assertStealthDataRecordLengths(stealthData);
 
-  const STEALTH_DATA_PER_OUTPUT = 72; // ephemeral_pub(32) + encrypted_amount(8) + encrypted_token_id(32)
   const SENDER_MEMO_PER_OUTPUT = 80; // nonce(24) + ciphertext_and_tag(56)
 
   const hasSenderMemos = senderMemos != null;
@@ -568,7 +578,7 @@ export function buildTransactInstructionData(options: {
 
   // Stealth data (ephemeral_pub + encrypted_amount per output)
   for (const sd of stealthData) {
-    data.set(sd.slice(0, STEALTH_DATA_PER_OUTPUT), offset);
+    data.set(sd, offset);
     offset += STEALTH_DATA_PER_OUTPUT;
   }
 
@@ -700,6 +710,7 @@ export function buildRedeemInstructionData(options: {
   if (stealthData.length !== nTreeOutputs) {
     throw new Error(`Expected ${nTreeOutputs} stealth data entries, got ${stealthData.length}`);
   }
+  assertStealthDataRecordLengths(stealthData);
   if (redeemAmounts.length !== nPublicOutputs) {
     throw new Error(`Expected ${nPublicOutputs} redeem amounts, got ${redeemAmounts.length}`);
   }
@@ -715,12 +726,11 @@ export function buildRedeemInstructionData(options: {
     }
   }
 
-  const STEALTH_DATA_SIZE = 72; // ephemeral_pub(32) + encrypted_amount(8) + encrypted_token_id(32)
   const proofSize = proofSource === 0 ? 256 : 0;
   let totalScriptLen = 0;
   for (const s of btcScripts) totalScriptLen += s.length;
   const totalSize = 1 + 4 + proofSize + 32 + 32
-    + (nInputs * 32) + (nOutputs * 32) + (nTreeOutputs * STEALTH_DATA_SIZE)
+    + (nInputs * 32) + (nOutputs * 32) + (nTreeOutputs * STEALTH_DATA_PER_OUTPUT)
     + nPublicOutputs * (8 + 1 + 8) + totalScriptLen;
 
   const data = new Uint8Array(totalSize);
@@ -764,8 +774,8 @@ export function buildRedeemInstructionData(options: {
 
   // Stealth data for tree outputs only (72 bytes each)
   for (const sd of stealthData) {
-    data.set(sd.slice(0, STEALTH_DATA_SIZE), offset);
-    offset += STEALTH_DATA_SIZE;
+    data.set(sd, offset);
+    offset += STEALTH_DATA_PER_OUTPUT;
   }
 
   // Per-output redeem data: amount(8) + script_len(1) + script(var) + nonce(8)
@@ -878,11 +888,11 @@ export function buildUnshieldInstructionData(options: {
   if (stealthData.length !== nTreeOutputs) {
     throw new Error(`Expected ${nTreeOutputs} stealth data entries (tree outputs), got ${stealthData.length}`);
   }
+  assertStealthDataRecordLengths(stealthData);
   if (unshieldAmounts.length !== nPublicOutputs) {
     throw new Error(`Expected ${nPublicOutputs} unshield amounts, got ${unshieldAmounts.length}`);
   }
 
-  const STEALTH_DATA_PER_OUTPUT = 72; // ephemeral_pub(32) + encrypted_amount(8) + encrypted_token_id(32)
   const proofSize = proofSource === 0 ? 256 : 0;
   const totalSize = 1 + 4 + proofSize + 32 + 32 + (nInputs * 32) + (nOutputs * 32) + (nTreeOutputs * STEALTH_DATA_PER_OUTPUT) + (nPublicOutputs * 8);
   const data = new Uint8Array(totalSize);
@@ -927,7 +937,7 @@ export function buildUnshieldInstructionData(options: {
 
   // Stealth data for tree outputs only
   for (const sd of stealthData) {
-    data.set(sd.slice(0, STEALTH_DATA_PER_OUTPUT), offset);
+    data.set(sd, offset);
     offset += STEALTH_DATA_PER_OUTPUT;
   }
 
