@@ -19,9 +19,9 @@ function buildAccount(payload: Uint8Array): Uint8Array {
   return out;
 }
 
-/** Standard v2 stealth payload with optional trailing flag byte and
+/** Current stealth payload with optional trailing flag byte and
  *  optional 32-byte auditor pubkey after that. */
-function v2Payload(opts: {
+function currentPayload(opts: {
   viewingPubKey?: Uint8Array;
   mpk?: Uint8Array;
   trailingFlag?: number;
@@ -48,9 +48,9 @@ function v2Payload(opts: {
   return buf;
 }
 
-describe("parseSnsStealthData — compliance flags back-compat", () => {
-  it("returns complianceFlags=0 for a legacy 65-byte payload (no extra byte)", () => {
-    const parsed = parseSnsStealthData(buildAccount(v2Payload({})));
+describe("parseSnsStealthData — compliance flags", () => {
+  it("returns complianceFlags=0 for a base 65-byte payload with no extra byte", () => {
+    const parsed = parseSnsStealthData(buildAccount(currentPayload({})));
     expect(parsed).not.toBeNull();
     expect(parsed!.complianceFlags).toBe(0);
     expect(parsed!.version).toBe(2);
@@ -58,7 +58,7 @@ describe("parseSnsStealthData — compliance flags back-compat", () => {
 
   it("reads complianceFlags from the optional 66-byte payload", () => {
     const parsed = parseSnsStealthData(
-      buildAccount(v2Payload({ trailingFlag: SnsComplianceFlags.AUDITOR_DISCLOSABLE })),
+      buildAccount(currentPayload({ trailingFlag: SnsComplianceFlags.AUDITOR_DISCLOSABLE })),
     );
     expect(parsed).not.toBeNull();
     expect(parsed!.complianceFlags).toBe(SnsComplianceFlags.AUDITOR_DISCLOSABLE);
@@ -68,7 +68,7 @@ describe("parseSnsStealthData — compliance flags back-compat", () => {
     // 0b00000110 — bits 1 and 2 set; bit 0 (AUDITOR_DISCLOSABLE) clear.
     // The reader should still surface the raw byte; only `isAuditorDisclosable`
     // narrows to bit 0.
-    const parsed = parseSnsStealthData(buildAccount(v2Payload({ trailingFlag: 0b110 })));
+    const parsed = parseSnsStealthData(buildAccount(currentPayload({ trailingFlag: 0b110 })));
     expect(parsed!.complianceFlags).toBe(0b110);
   });
 
@@ -79,11 +79,11 @@ describe("parseSnsStealthData — compliance flags back-compat", () => {
   });
 });
 
-describe("parseSnsStealthData — v2 auditor pubkey", () => {
+describe("parseSnsStealthData — auditor pubkey", () => {
   it("reads the auditor pubkey when the payload carries one", () => {
     const auditor = new Uint8Array(32).fill(0xaf);
     const parsed = parseSnsStealthData(
-      buildAccount(v2Payload({
+      buildAccount(currentPayload({
         trailingFlag: SnsComplianceFlags.AUDITOR_DISCLOSABLE,
         auditorPubkey: auditor,
       })),
@@ -98,7 +98,7 @@ describe("parseSnsStealthData — v2 auditor pubkey", () => {
     // the flag, leave auditorPubkey undefined so callers don't render an
     // empty address.
     const parsed = parseSnsStealthData(
-      buildAccount(v2Payload({
+      buildAccount(currentPayload({
         trailingFlag: SnsComplianceFlags.AUDITOR_DISCLOSABLE,
         auditorPubkey: new Uint8Array(32), // all zeros
       })),
@@ -107,30 +107,19 @@ describe("parseSnsStealthData — v2 auditor pubkey", () => {
     expect(parsed!.complianceFlags).toBe(SnsComplianceFlags.AUDITOR_DISCLOSABLE);
   });
 
-  it("leaves auditorPubkey undefined on a flag-only payload (back-compat)", () => {
+  it("leaves auditorPubkey undefined on a flag-only payload", () => {
     const parsed = parseSnsStealthData(
-      buildAccount(v2Payload({ trailingFlag: SnsComplianceFlags.AUDITOR_DISCLOSABLE })),
+      buildAccount(currentPayload({ trailingFlag: SnsComplianceFlags.AUDITOR_DISCLOSABLE })),
     );
     expect(parsed!.auditorPubkey).toBeUndefined();
     expect(parsed!.complianceFlags).toBe(SnsComplianceFlags.AUDITOR_DISCLOSABLE);
   });
 
-  it("never reads compliance bytes from a legacy v1 record (would alias mpk)", () => {
-    // Synthesize a 97-byte legacy v1 record: version(1) + spending(32) +
-    // viewing(32) + mpk(32). Byte 65 of the stealth payload here is the
-    // FIRST byte of mpk — we must not surface it as complianceFlags.
-    const legacyPayload = new Uint8Array(97);
-    legacyPayload[0] = 1; // version 1
-    legacyPayload.set(new Uint8Array(32).fill(0xee), 1);  // spendingPub
-    legacyPayload.set(new Uint8Array(32).fill(0x11), 33); // viewingPub
-    legacyPayload.set(new Uint8Array(32).fill(0x22), 65); // mpk (all bytes 0x22)
+  it("rejects version 1 records instead of parsing old layouts", () => {
+    const payload = currentPayload({});
+    payload[0] = 1;
 
-    const parsed = parseSnsStealthData(buildAccount(legacyPayload));
-    expect(parsed).not.toBeNull();
-    expect(parsed!.version).toBe(1);
-    // The parser MUST NOT alias mpk[0] as a flag byte.
-    expect(parsed!.complianceFlags).toBe(0);
-    expect(parsed!.auditorPubkey).toBeUndefined();
+    expect(parseSnsStealthData(buildAccount(payload))).toBeNull();
   });
 });
 

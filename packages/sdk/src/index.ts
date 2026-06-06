@@ -539,8 +539,6 @@ export {
   SNS_COMPLIANCE_AUDITOR_BYTES,
   deriveParentDomainKey,
   SNS_STEALTH_DATA_SIZE,
-  SNS_STEALTH_DATA_SIZE_LEGACY_V1,
-  SNS_STEALTH_DATA_SIZE_LEGACY_V2,
   type SnsStealthAddress,
 } from "./sns-resolver";
 
