@@ -34,6 +34,11 @@ export function address(input: string): Address {
 // =============================================================================
 
 export type NetworkType = "devnet" | "mainnet" | "localnet";
+export type AppNetworkId =
+  | NetworkType
+  | "devnet-regtest"
+  | "sui-testnet"
+  | "sui-regtest";
 
 export interface NetworkConfig {
   /** Network identifier */
@@ -425,7 +430,39 @@ function esploraUrlForNetwork(net: string): string {
     case "testnet": return "https://mempool.space/testnet/api";
     case "testnet4": return "https://mempool.space/testnet4/api";
     case "signet": return "https://mempool.space/signet/api";
+    case "regtest": return "http://localhost:2140";
     default: return `https://mempool.space/${net}/api`;
+  }
+}
+
+function normalizeAppNetwork(network?: string): NetworkType {
+  switch (network) {
+    case "mainnet":
+      return "mainnet";
+    case "localnet":
+      return "localnet";
+    case "devnet":
+    case "devnet-regtest":
+    case "sui-testnet":
+    case "sui-regtest":
+    default:
+      return "devnet";
+  }
+}
+
+function bitcoinNetworkForAppNetwork(network?: string): NetworkConfig["bitcoinNetwork"] | undefined {
+  switch (network) {
+    case "localnet":
+    case "devnet-regtest":
+    case "sui-regtest":
+      return "regtest";
+    case "devnet":
+    case "sui-testnet":
+      return "testnet4";
+    case "mainnet":
+      return "mainnet";
+    default:
+      return undefined;
   }
 }
 
@@ -453,9 +490,10 @@ export function getConfig(): NetworkConfig {
  * @param network - Network type or custom config
  * @throws Error if mainnet is selected (not yet deployed)
  */
-export function setConfig(network: NetworkType | NetworkConfig): void {
+export function setConfig(network: AppNetworkId | NetworkConfig): void {
   if (typeof network === "string") {
-    switch (network) {
+    const baseNetwork = normalizeAppNetwork(network);
+    switch (baseNetwork) {
       case "devnet":
         currentConfig = DEVNET_CONFIG;
         break;
@@ -470,6 +508,14 @@ export function setConfig(network: NetworkType | NetworkConfig): void {
         break;
       default:
         throw new Error(`Unknown network: ${network}`);
+    }
+    const bitcoinNetwork = bitcoinNetworkForAppNetwork(network);
+    if (bitcoinNetwork) {
+      currentConfig = {
+        ...currentConfig,
+        bitcoinNetwork,
+        esploraUrl: esploraUrlForNetwork(bitcoinNetwork),
+      };
     }
   } else {
     // Check if custom config is using placeholder mainnet addresses
@@ -518,7 +564,7 @@ export function createConfig(
  * // Or pass explicitly
  * await initConfig({ utxopiaProgramId: "...", zkbtcMint: "..." });
  */
-export type NetworkId = "devnet" | "localnet" | "mainnet";
+export type NetworkId = AppNetworkId;
 
 export async function initConfig(overrides?: {
   network?: NetworkId;
@@ -530,10 +576,11 @@ export async function initConfig(overrides?: {
   depositMode?: "sweep" | "direct" | "direct_vault" | "ika_direct";
 }): Promise<NetworkConfig> {
   // Pick base config from network: param > env > devnet
-  const networkId: NetworkId =
+  const appNetworkId: NetworkId =
     overrides?.network ||
     (typeof process !== "undefined" && (process.env?.NEXT_PUBLIC_NETWORK || process.env?.UTXOPIA_NETWORK) as NetworkId) ||
     "devnet";
+  const networkId = normalizeAppNetwork(appNetworkId);
 
   const baseConfig = networkId === "localnet"
     ? LOCALNET_CONFIG
@@ -542,6 +589,14 @@ export async function initConfig(overrides?: {
       : DEVNET_CONFIG;
 
   const config = { ...baseConfig };
+  const appBitcoinNetwork = bitcoinNetworkForAppNetwork(appNetworkId);
+  const btcNetOverride =
+    typeof process !== "undefined" && process.env?.NEXT_PUBLIC_BTC_NETWORK;
+  const bitcoinNetwork = btcNetOverride || appBitcoinNetwork;
+  if (bitcoinNetwork) {
+    config.bitcoinNetwork = bitcoinNetwork as NetworkConfig["bitcoinNetwork"];
+    config.esploraUrl = esploraUrlForNetwork(bitcoinNetwork);
+  }
 
   // Resolve program ID: param > env > base config default
   const programId =
