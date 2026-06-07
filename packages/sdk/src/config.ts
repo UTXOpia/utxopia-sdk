@@ -239,7 +239,7 @@ export const DEVNET_CONFIG: NetworkConfig = {
   esploraUrl: "https://mempool.space/testnet4/api",
 
   // Circuit CDN (Groth16 artifacts: .wasm, .zkey files)
-  circuitCdnUrl: "https://circuits.amidoggy.xyz",
+  circuitCdnUrl: "https://circuit.utxopia.com",
 
   // Groth16 Verifier: verification is inline in the UTXOpia program (no separate verifier program)
   groth16VerifierProgramId: address("AjbX243s2JMFG2uhfTjKkadjPvQEPgcuyV3vfLJv36MT"), // inline in utxopia program
@@ -253,16 +253,16 @@ export const DEVNET_CONFIG: NetworkConfig = {
 
   // JoinSplit VK hashes (populated after trusted setup for new circuits)
   joinSplitVkHashes: {
-    "1x1": "2c21bba8396f58db95396b43591edcb724d19c75aecd20a385a6e1eeddc93272",
-    "1x2": "b95add145fed1900bbca2cf44b0826c24c8b13ad6441fe6950dadd6e862e5701",
-    "2x1": "81513149f518bbf6de31bc59349d48685bb08b3ef56f0f3eed4e2587d5ba1458",
-    "2x2": "303bdc51d561ff0986e56e59129eeca42a929f0387e638902be00570ee1ab0c1",
-    "1x3": "f30e533c1851b8e8e36fd0dd57bb4e08da0196fb28fa443405eac67ee912c4a6",
-    "3x1": "ba42d39886cee0ef7542ce81fc7199f27f0fd18cd86ff1eecdefab2a1de553d7",
-    "2x3": "9f88ace5197649135e22ec474caf0a67e3946e0c28f680e5815e0105c21e6645",
-    "3x2": "04c156047b42c736a841154bae3f4df3e5afaef62aebf6df5394ee6aca7439c4",
-    "1x4": "37edd144d5b938dba99f7a2d75e47a2770302860822f1fb724bdc6285da57678",
-    "4x1": "4c17064df6986482d837a7815ac68b015901b6cec92730c4441d4c8c0b238d63",
+    "1x1": "745d536fb3a86424ee9560cb7b630bb0eb3d3c3af06c85bcda1eb7bcc5b1a07a",
+    "1x2": "f782d4bc2f696417688cdec3cb4f822d6961892192e13e8842505bd8d119fa6d",
+    "2x1": "3af6cdad3c1f4de9e088975a1ac5b20e0445d7f3fea0a5038f300102cf98fd98",
+    "2x2": "6fffc4962028d0ac69f4d7877badc9f5adea4b83e6224ebb8db22657e847e7b8",
+    "1x3": "ca396f36bbd1b07255b7a2f5585cedb4a51f925149747dd6ab4f695d19aa6ff8",
+    "3x1": "4e0c5cbea0ccf80302d2589e41a2f22e19287f5acc5d0577451680fd909e1942",
+    "2x3": "bf398583f064de96560cb9092b1357b0d742991a88f18a351e5b8793fed4b7a7",
+    "3x2": "9da8d33d57896e76aadf3f5c66295774bd3273511af6e733ca7f9446ab58d42e",
+    "1x4": "01728b82e810a8ba604cc66aa6a563444d18f4598c402d11767d0a7e5049a9be",
+    "4x1": "0362b306b17dae916d836d9448a26c97e51b1b0a1a0ed052ebfbd4800e5000cf",
   },
 
   // Pool group key (FROST 2-of-3 DKG output, x-only secp256k1) — legacy.
@@ -309,7 +309,7 @@ export const MAINNET_CONFIG: NetworkConfig = {
   esploraUrl: "https://mempool.space/api",
 
   // Circuit CDN
-  circuitCdnUrl: "https://cdn.jsdelivr.net/npm/@utxopia/sdk@latest/circuits",
+  circuitCdnUrl: "https://circuit.utxopia.com",
 
   // Groth16 Verifier (placeholder)
   groth16VerifierProgramId: address("11111111111111111111111111111111"),
@@ -380,10 +380,10 @@ export const LOCALNET_CONFIG: NetworkConfig = {
   },
 
   joinSplitVkHashes: {
-    "1x1": "2c21bba8396f58db95396b43591edcb724d19c75aecd20a385a6e1eeddc93272",
-    "1x2": "b95add145fed1900bbca2cf44b0826c24c8b13ad6441fe6950dadd6e862e5701",
-    "2x1": "81513149f518bbf6de31bc59349d48685bb08b3ef56f0f3eed4e2587d5ba1458",
-    "2x2": "303bdc51d561ff0986e56e59129eeca42a929f0387e638902be00570ee1ab0c1",
+    "1x1": "745d536fb3a86424ee9560cb7b630bb0eb3d3c3af06c85bcda1eb7bcc5b1a07a",
+    "1x2": "f782d4bc2f696417688cdec3cb4f822d6961892192e13e8842505bd8d119fa6d",
+    "2x1": "3af6cdad3c1f4de9e088975a1ac5b20e0445d7f3fea0a5038f300102cf98fd98",
+    "2x2": "6fffc4962028d0ac69f4d7877badc9f5adea4b83e6224ebb8db22657e847e7b8",
   },
 
   // Pool group key (POC — same as devnet for local dev) — legacy fallback.

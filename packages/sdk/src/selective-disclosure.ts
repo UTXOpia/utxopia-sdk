@@ -116,7 +116,8 @@ export interface RangeSumProofInputs {
     randomIn: bigint;
     valueIn: bigint;
     pathElements: bigint[];
-    pathIndices: number[];
+    /** @deprecated No longer used: the circuit derives path bits from leafIndex. */
+    pathIndices?: number[];
     commitment: bigint;
     leafIndex: number;
   }>;
@@ -275,7 +276,8 @@ export async function generateRangeSumProof(
     randomIn: inputs.notes.map((n) => n.randomIn.toString()),
     valueIn: inputs.notes.map((n) => n.valueIn.toString()),
     pathElements: inputs.notes.map((n) => n.pathElements.map((e) => e.toString())),
-    pathIndices: inputs.notes.map((n) => n.pathIndices),
+    // pathIndices is derived in-circuit from the public leafIndices (Num2Bits),
+    // so it is no longer passed as a witness input.
     viewerNonce: inputs.viewerNonce.toString(),
     commitmentsIn: inputs.notes.map((n) => n.commitment.toString()),
   });

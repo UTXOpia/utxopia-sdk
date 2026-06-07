@@ -94,6 +94,18 @@ export interface AuditScanAnnouncement extends OnChainStealthAnnouncement {
   tokenId?: bigint;
 }
 
+// Range intersection: undefined means unbounded on that side.
+function intersectLower(a?: number, b?: number): number | undefined {
+  if (a == null) return b;
+  if (b == null) return a;
+  return Math.max(a, b);
+}
+function intersectUpper(a?: number, b?: number): number | undefined {
+  if (a == null) return b;
+  if (b == null) return a;
+  return Math.min(a, b);
+}
+
 /**
  * Scan announcements with a delegated viewing key and produce {@link AuditRecord}s.
  *
@@ -120,8 +132,10 @@ export async function auditScan(
     throw new Error("auditScan requires at least one tokenId");
   }
 
-  const effectiveFromSlot = options.fromSlot ?? key.fromSlot;
-  const effectiveToSlot = options.toSlot ?? key.toSlot;
+  // Intersect the CLI range with the key's grant — options may only narrow the
+  // delegated [fromSlot, toSlot], never widen it (undefined = unbounded that side).
+  const effectiveFromSlot = intersectLower(options.fromSlot, key.fromSlot);
+  const effectiveToSlot = intersectUpper(options.toSlot, key.toSlot);
 
   const keyForRange: DelegatedViewKey = {
     ...key,

@@ -147,26 +147,9 @@ export function reverseBytes(bytes: Uint8Array): Uint8Array {
   return reversed;
 }
 
-/**
- * Convert hex string to bytes
- */
-export function hexToBytes(hex: string): Uint8Array {
-  const cleanHex = hex.startsWith("0x") ? hex.slice(2) : hex;
-  const bytes = new Uint8Array(cleanHex.length / 2);
-  for (let i = 0; i < bytes.length; i++) {
-    bytes[i] = parseInt(cleanHex.substr(i * 2, 2), 16);
-  }
-  return bytes;
-}
-
-/**
- * Convert bytes to hex string
- */
-export function bytesToHex(bytes: Uint8Array): string {
-  return Array.from(bytes)
-    .map((b) => b.toString(16).padStart(2, "0"))
-    .join("");
-}
+// hexToBytes / bytesToHex live in ../crypto (single source); re-exported here
+// to preserve this module's public surface.
+export { hexToBytes, bytesToHex } from "../crypto";
 
 // =============================================================================
 // Default Instances

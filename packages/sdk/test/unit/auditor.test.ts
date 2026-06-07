@@ -271,6 +271,39 @@ describe("auditScan — matching incoming deposits", () => {
     expect(result.outOfRangeSkipped).toBe(1);
   });
 
+  it("intersects CLI slot options with the key range (cannot widen scope)", async () => {
+    const recipient = deriveKeysFromSeed(new Uint8Array(32).fill(0x42));
+    const delegated = createDelegatedViewKey(recipient, ViewPermissions.FULL, {
+      fromSlot: 200,
+      toSlot: 300,
+    });
+    const amount = 5_000n;
+    const recipientMeta = createStealthMetaAddress(recipient);
+    const deposit = await createStealthDepositWithKeys(recipientMeta, amount, ZKBTC_TOKEN_ID);
+
+    const inRange: AuditScanAnnouncement = {
+      announcementType: ANNOUNCEMENT_TYPE_DEPOSIT,
+      ephemeralPub: deposit.ephemeralPub,
+      encryptedAmount: u64LE(amount),
+      commitment: deposit.commitment,
+      leafIndex: 1,
+      tokenId: ZKBTC_TOKEN_ID,
+      slot: 250,
+    };
+    const belowGrant = { ...inRange, slot: 100, leafIndex: 2 };
+
+    // Attempt to widen to [0, 999999]; intersection must clamp back to [200, 300].
+    const result = await auditScan(delegated, [inRange, belowGrant], {
+      tokenIds: [ZKBTC_TOKEN_ID],
+      fromSlot: 0,
+      toSlot: 999999,
+    });
+    expect(result.effectiveFromSlot).toBe(200);
+    expect(result.effectiveToSlot).toBe(300);
+    expect(result.records).toHaveLength(1);
+    expect(result.outOfRangeSkipped).toBe(1);
+  });
+
   it("refuses to scan when the delegated key is expired", () => {
     const recipient = deriveKeysFromSeed(new Uint8Array(32).fill(0x42));
     const delegated = createDelegatedViewKey(recipient, ViewPermissions.FULL, {

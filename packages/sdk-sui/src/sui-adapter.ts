@@ -45,6 +45,8 @@ export interface UTXOpiaSuiAdapterConfig {
   redemptionCapObjectId?: string;
   redemptionCapVersion?: string;
   redemptionCapDigest?: string;
+  tokenRegistryObjectId?: string;
+  tokenRegistryInitialSharedVersion?: number | string;
   indexerUrl?: string;
 }
 
@@ -197,6 +199,12 @@ export class UTXOpiaSuiAdapter implements UTXOpiaChainAdapter {
     const nullifierBytes = nullifiers.map((bytes) => Array.from(bytes));
     const commitmentBytes = input.commitmentsOut.map((bytes) => Array.from(bytes));
 
+    const stealthData = input.stealthData ?? [];
+    if (stealthData.length !== nOutputs) {
+      throw new Error("Sui transact stealthData count must match nOutputs");
+    }
+    const stealthBytes = stealthData.map((bytes) => Array.from(bytes));
+
     tx.moveCall({
       target: `${this.config.packageId}::transact::transact`,
       arguments: [
@@ -226,6 +234,7 @@ export class UTXOpiaSuiAdapter implements UTXOpiaChainAdapter {
         tx.pure.vector("u8", input.proofPoints),
         tx.pure("vector<vector<u8>>", nullifierBytes),
         tx.pure("vector<vector<u8>>", commitmentBytes),
+        tx.pure("vector<vector<u8>>", stealthBytes),
       ],
     });
 
@@ -335,6 +344,230 @@ export class UTXOpiaSuiAdapter implements UTXOpiaChainAdapter {
       this.config.nullifierRegistryObjectId,
       this.config.verifyingKeyRegistryObjectId,
       this.config.redemptionQueueObjectId,
+    ]);
+  }
+
+  /**
+   * Admin-gated `Coin<T>` registration. Adds the allowlist entry + zeroed
+   * vault/fee balances, reading decimals from the on-chain `CoinMetadata<T>`.
+   * `coinType` is the fully-qualified Move type arg (e.g. `0x2::sui::SUI`).
+   */
+  async buildRegisterTokenTransaction(input: {
+    coinType: string;
+    /** Shared `CoinMetadata<T>` object id. */
+    metadataObjectId: string;
+    metadataInitialSharedVersion: number | string;
+    minDeposit: bigint | number;
+    maxDeposit: bigint | number;
+    depositCap: bigint | number;
+    feeBps: number;
+  }): Promise<SuiUnsignedTransaction> {
+    if (!this.config.adminCapObjectId || !this.config.adminCapVersion || !this.config.adminCapDigest) {
+      throw new Error("Sui admin cap object ref is required to register tokens");
+    }
+    if (!this.config.tokenRegistryObjectId) {
+      throw new Error("Sui token registry object ID is required to register tokens");
+    }
+
+    const tx = new Transaction();
+    const adminCap = tx.objectRef({
+      objectId: this.config.adminCapObjectId,
+      version: this.config.adminCapVersion,
+      digest: this.config.adminCapDigest,
+    });
+    tx.moveCall({
+      target: `${this.config.packageId}::token_registry::register_token`,
+      typeArguments: [input.coinType],
+      arguments: [
+        adminCap,
+        this.sharedObject(tx, this.config.poolObjectId, this.config.poolInitialSharedVersion, false),
+        this.sharedObject(
+          tx,
+          this.config.tokenRegistryObjectId,
+          this.config.tokenRegistryInitialSharedVersion,
+          true,
+        ),
+        this.sharedObject(tx, input.metadataObjectId, input.metadataInitialSharedVersion, false),
+        tx.pure.u64(input.minDeposit.toString()),
+        tx.pure.u64(input.maxDeposit.toString()),
+        tx.pure.u64(input.depositCap.toString()),
+        tx.pure.u16(input.feeBps),
+      ],
+    });
+
+    return this.buildPtb(tx, "Sui register token PTB", [
+      this.config.adminCapObjectId,
+      this.config.poolObjectId,
+      this.config.tokenRegistryObjectId,
+      input.metadataObjectId,
+    ]);
+  }
+
+  /**
+   * Single-PTB shield: split the exact `amount` off the funding `Coin<T>` and
+   * `token_registry::shield<T>` it atomically (one signature, no approve step).
+   * The split remainder stays with the sender as change.
+   */
+  async buildShieldTokenTransaction(input: {
+    coinType: string;
+    /**
+     * Funding coin the exact amount is split from. A full object ref builds the PTB
+     * fully offline; pass only `objectId` to defer version/digest resolution to a
+     * client-backed `build`.
+     */
+    fundingCoin: { objectId: string; version?: number | string; digest?: string };
+    amount: bigint | number;
+    /** Note public key (32-byte big-endian field element). */
+    npk: Uint8Array;
+    /** Ephemeral pubkey for the stealth announcement. */
+    ephemeralPub: Uint8Array;
+  }): Promise<SuiUnsignedTransaction> {
+    if (!this.config.tokenRegistryObjectId) {
+      throw new Error("Sui token registry object ID is required to build shield PTBs");
+    }
+    if (!this.config.commitmentTreeObjectId) {
+      throw new Error("Sui commitment tree object ID is required to build shield PTBs");
+    }
+
+    const tx = new Transaction();
+    const fundingCoin = input.fundingCoin.version !== undefined && input.fundingCoin.digest !== undefined
+      ? tx.objectRef({
+          objectId: input.fundingCoin.objectId,
+          version: input.fundingCoin.version,
+          digest: input.fundingCoin.digest,
+        })
+      : tx.object(input.fundingCoin.objectId);
+    const [shielded] = tx.splitCoins(fundingCoin, [tx.pure.u64(input.amount.toString())]);
+    tx.moveCall({
+      target: `${this.config.packageId}::token_registry::shield`,
+      typeArguments: [input.coinType],
+      arguments: [
+        this.sharedObject(tx, this.config.poolObjectId, this.config.poolInitialSharedVersion, false),
+        this.sharedObject(
+          tx,
+          this.config.tokenRegistryObjectId,
+          this.config.tokenRegistryInitialSharedVersion,
+          true,
+        ),
+        this.sharedObject(
+          tx,
+          this.config.commitmentTreeObjectId,
+          this.config.commitmentTreeInitialSharedVersion,
+          true,
+        ),
+        tx.pure.vector("u8", input.npk),
+        tx.pure.vector("u8", input.ephemeralPub),
+        shielded,
+        tx.object.clock(),
+      ],
+    });
+
+    return this.buildPtb(tx, "Sui generic shield PTB", [
+      this.config.poolObjectId,
+      this.config.tokenRegistryObjectId,
+      this.config.commitmentTreeObjectId,
+      input.fundingCoin.objectId,
+    ]);
+  }
+
+  /**
+   * JoinSplit proof → release `Coin<T>` to public recipients. Built with
+   * `onlyTransactionKind` so a gas station can wrap it with a sponsor's gas data
+   * (the gas owner is never hardcoded here).
+   */
+  async buildUnshieldTransaction(input: {
+    coinType: string;
+    nInputs: number;
+    nOutputs: number;
+    nPublicOutputs: number;
+    vkHash: Uint8Array;
+    publicInputs: Uint8Array;
+    proofPoints: Uint8Array;
+    nullifiers: Uint8Array[];
+    commitmentsOut: Uint8Array[];
+    stealthData: Uint8Array[];
+    amounts: Array<bigint | number>;
+    recipients: string[];
+  }): Promise<SuiUnsignedTransaction> {
+    if (!this.config.tokenRegistryObjectId) {
+      throw new Error("Sui token registry object ID is required to build unshield PTBs");
+    }
+    if (!this.config.commitmentTreeObjectId) {
+      throw new Error("Sui commitment tree object ID is required to build unshield PTBs");
+    }
+    if (!this.config.nullifierRegistryObjectId) {
+      throw new Error("Sui nullifier registry object ID is required to build unshield PTBs");
+    }
+    if (!this.config.verifyingKeyRegistryObjectId) {
+      throw new Error("Sui verifying-key registry object ID is required to build unshield PTBs");
+    }
+    if (input.nullifiers.length !== input.nInputs) {
+      throw new Error("Sui unshield nullifier count must match nInputs");
+    }
+    if (input.commitmentsOut.length !== input.nOutputs) {
+      throw new Error("Sui unshield commitment count must match nOutputs");
+    }
+    if (
+      input.amounts.length !== input.nPublicOutputs
+      || input.recipients.length !== input.nPublicOutputs
+    ) {
+      throw new Error("Sui unshield amounts and recipients must match nPublicOutputs");
+    }
+    if (input.stealthData.length !== input.nOutputs - input.nPublicOutputs) {
+      throw new Error("Sui unshield stealthData count must match tree output count");
+    }
+
+    const tx = new Transaction();
+    tx.moveCall({
+      target: `${this.config.packageId}::token_registry::unshield`,
+      typeArguments: [input.coinType],
+      arguments: [
+        this.sharedObject(tx, this.config.poolObjectId, this.config.poolInitialSharedVersion, false),
+        this.sharedObject(
+          tx,
+          this.config.tokenRegistryObjectId,
+          this.config.tokenRegistryInitialSharedVersion,
+          true,
+        ),
+        this.sharedObject(
+          tx,
+          this.config.commitmentTreeObjectId,
+          this.config.commitmentTreeInitialSharedVersion,
+          true,
+        ),
+        this.sharedObject(
+          tx,
+          this.config.nullifierRegistryObjectId,
+          this.config.nullifierRegistryInitialSharedVersion,
+          true,
+        ),
+        this.sharedObject(
+          tx,
+          this.config.verifyingKeyRegistryObjectId,
+          this.config.verifyingKeyRegistryInitialSharedVersion,
+          false,
+        ),
+        tx.pure.u8(input.nInputs),
+        tx.pure.u8(input.nOutputs),
+        tx.pure.u8(input.nPublicOutputs),
+        tx.pure.vector("u8", input.vkHash),
+        tx.pure.vector("u8", input.publicInputs),
+        tx.pure.vector("u8", input.proofPoints),
+        tx.pure("vector<vector<u8>>", input.nullifiers.map((bytes) => Array.from(bytes))),
+        tx.pure("vector<vector<u8>>", input.commitmentsOut.map((bytes) => Array.from(bytes))),
+        tx.pure("vector<vector<u8>>", input.stealthData.map((bytes) => Array.from(bytes))),
+        tx.pure("vector<u64>", input.amounts.map((amount) => amount.toString())),
+        tx.pure("vector<address>", input.recipients),
+        tx.object.clock(),
+      ],
+    });
+
+    return this.buildPtb(tx, "Sui generic unshield PTB", [
+      this.config.poolObjectId,
+      this.config.tokenRegistryObjectId,
+      this.config.commitmentTreeObjectId,
+      this.config.nullifierRegistryObjectId,
+      this.config.verifyingKeyRegistryObjectId,
     ]);
   }
 

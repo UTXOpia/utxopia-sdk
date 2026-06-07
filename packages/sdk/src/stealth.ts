@@ -710,14 +710,10 @@ export async function scanAnnouncementsViewOnly(
       const expectedCommitment = computeJoinSplitCommitmentSync(npk, tokenId, amount);
       const actualCommitment = bytesToBigint(ann.commitment);
 
-      // For deposits, must verify commitment to filter non-matching
-      if (ann.announcementType === ANNOUNCEMENT_TYPE_DEPOSIT) {
-        if (expectedCommitment !== actualCommitment) {
-          continue;
-        }
+      // Verify commitment for both deposits and transfers (filters phantom notes).
+      if (expectedCommitment !== actualCommitment) {
+        continue;
       }
-
-      // For transfers, wrong key → garbage amount already filtered above
 
       found.push({
         amount,
@@ -887,14 +883,11 @@ export async function scanUnifiedNotes(
       const npk = computeNPKSync(mpk, stealthScalar);
       const commitmentBigint = computeJoinSplitCommitmentSync(npk, tokenId, amount);
 
-      // For deposits (type=0), amount is plaintext so any key reads valid amount.
-      // Must verify commitment to filter out deposits that don't belong to us.
-      // For transfers (type=1), wrong key → garbage decrypted amount → already filtered above.
-      if (ann.announcementType === ANNOUNCEMENT_TYPE_DEPOSIT) {
-        const onChainCommitment = bytesToBigint(ann.commitment);
-        if (commitmentBigint !== onChainCommitment) {
-          continue; // Not our deposit — ECDH shared secret doesn't match
-        }
+      // Verify the recomputed commitment against the on-chain one for BOTH
+      // deposits and transfers — a foreign transfer whose XOR-decrypted amount
+      // lands in range would otherwise become a phantom note.
+      if (commitmentBigint !== bytesToBigint(ann.commitment)) {
+        continue;
       }
 
       // Convert commitment bigint to bytes for the ScannedNote

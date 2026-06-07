@@ -5,6 +5,8 @@
  * Supports mempool.space API for testnet/mainnet
  */
 
+import { hexToBytes } from "../crypto";
+
 export interface EsploraTransaction {
   txid: string;
   version: number;
@@ -320,14 +322,6 @@ export class EsploraClient {
 // =========================================================================
 // Utility functions
 // =========================================================================
-
-function hexToBytes(hex: string): Uint8Array {
-  const bytes = new Uint8Array(hex.length / 2);
-  for (let i = 0; i < bytes.length; i++) {
-    bytes[i] = parseInt(hex.substr(i * 2, 2), 16);
-  }
-  return bytes;
-}
 
 function sleep(ms: number): Promise<void> {
   return new Promise((resolve) => setTimeout(resolve, ms));

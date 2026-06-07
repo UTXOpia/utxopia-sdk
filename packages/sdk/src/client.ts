@@ -190,7 +190,7 @@ export class UTXOpiaClient {
     signature: Uint8Array,
     options: AuthSignatureKeyDerivationOptions = {},
   ): Promise<KeySetupResult> {
-    const result = setupKeysFromAuthSignature(signature, options);
+    const result = await setupKeysFromAuthSignature(signature, options);
     this._keys = result.keys;
     this._stealthAddress = result.stealthMetaAddress;
     this._stealthAddressEncoded = result.encodedStealthAddress;

@@ -39,10 +39,14 @@ export function deriveTaprootAddress(
   outputKey: Uint8Array;
   tweak: Uint8Array;
 } {
-  // Use provided internal key or default
   const key = internalKey || hexToBytes(INTERNAL_KEY_HEX);
   if (key.length !== 32) {
     throw new Error("Internal key must be 32 bytes (x-only)");
+  }
+  // Refuse the secp256k1 generator x-coord (discrete log = 1): its key-path secret
+  // 1+tweak is publicly computable, so any observer could sweep the output.
+  if (bytesToHex(key) === INTERNAL_KEY_HEX) {
+    throw new Error("Refusing to derive Taproot with the generator internal key; pass a real FROST/Ika key");
   }
 
   // Compute tweak = H_TapTweak(internal_key || commitment)
@@ -585,7 +589,9 @@ export function deriveTaprootAddressWithRefund(
  * In production, this would be the FROST threshold public key
  */
 export function getInternalKey(): Uint8Array {
-  return hexToBytes(INTERNAL_KEY_HEX);
+  // The historical default is the secp256k1 generator (sweepable). Refuse it —
+  // callers must supply a real FROST/Ika group key explicitly.
+  throw new Error("getInternalKey() is disabled: configure a real FROST/Ika internal key");
 }
 
 /**

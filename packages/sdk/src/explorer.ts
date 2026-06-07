@@ -16,8 +16,11 @@ import type { RpcClient } from "./commitment-tree";
 /** NullifierRecord account size (1 byte — slim layout, just discriminator) */
 export const NULLIFIER_RECORD_SIZE = 1;
 
-/** RedemptionRequest account size (98 bytes) */
-export const REDEMPTION_REQUEST_SIZE = 98;
+/** RedemptionRequest account size (138 bytes):
+ *  disc(1) status(1) btc_script_len(1) pad(1) processing_slot(4) request_id(8)
+ *  requester(32) amount_sats(8) service_fee(8) total_input_sats(8) btc_script(34)
+ *  token_id(32). */
+export const REDEMPTION_REQUEST_SIZE = 138;
 
 /** NullifierRecord discriminator byte */
 export const NULLIFIER_RECORD_DISCRIMINATOR = 0x03;
@@ -148,7 +151,7 @@ export function parseNullifierRecord(
   };
 }
 
-/** Parse a RedemptionRequest account (98 bytes, raw scriptPubKey) */
+/** Parse a RedemptionRequest account (138 bytes, raw scriptPubKey) */
 export function parseRedemptionRequest(
   pubkey: string,
   data: Uint8Array
@@ -168,7 +171,8 @@ export function parseRedemptionRequest(
     serviceFee: readU64LE(data, 56),
     status,
     requester: bs58Encode(data.slice(16, 48)),
-    btcScript: toHex(data.slice(64, 64 + Math.min(scriptLen, 34))),
+    // btc_script starts at offset 72 (after total_input_sats at 64..72).
+    btcScript: toHex(data.slice(72, 72 + Math.min(scriptLen, 34))),
     processingSlot,
   };
 }

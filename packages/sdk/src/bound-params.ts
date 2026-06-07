@@ -96,6 +96,10 @@ export function computeBoundParamsHash(params: BoundParams): bigint {
   return bytesToBigint(hash) % BN254_FIELD_PRIME;
 }
 
+/** Canonical chain ids folded into bound-params hashes (must match on-chain). */
+export const SOLANA_BOUND_CHAIN_ID = 103n;
+export const SUI_BOUND_CHAIN_ID = 784n;
+
 /**
  * Default bound params for Solana devnet (private transfer)
  */
@@ -153,6 +157,21 @@ export function createRedeemBoundParams(
     mode: 'redeem',
     stealthDataHash,
   };
+}
+
+/**
+ * Create bound params for a Sui generic-coin unshield.
+ *
+ * Mirrors `bound_params::unshield_hash`: the 32-byte (BCS) recipient addresses are
+ * concatenated and SHA256'd into the unshieldAddress slot, with the Sui domain chain id.
+ * `recipients` are raw 32-byte big-endian Sui addresses; `stealthHash` is the
+ * already-computed SHA256 of the concatenated stealth data (see computeStealthDataHash).
+ */
+export function createSuiUnshieldBoundParams(
+  recipients: Uint8Array | Uint8Array[],
+  stealthHash: Uint8Array,
+): BoundParams {
+  return createUnshieldBoundParams(recipients, stealthHash, SUI_BOUND_CHAIN_ID);
 }
 
 /**

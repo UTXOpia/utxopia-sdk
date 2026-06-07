@@ -479,10 +479,10 @@ export function generateRandomAuthSignature(): Uint8Array {
  * The protocol nullifying key is internal and derived from the spending seed,
  * so delegated viewing keys do not automatically carry nullifier authority.
  */
-export function deriveKeysFromAuthSignature(
+export async function deriveKeysFromAuthSignature(
   signature: Uint8Array,
   options: AuthSignatureKeyDerivationOptions = {},
-): UTXOpiaKeys {
+): Promise<UTXOpiaKeys> {
   const normalized = normalizeAuthSignature(signature);
   const root = deriveAuthSignatureRoot(normalized, options);
   const spendingSeed = deriveAuthSecret(root, AUTH_SPENDING_DOMAIN);
@@ -490,8 +490,10 @@ export function deriveKeysFromAuthSignature(
   const nullifyingSeed = deriveAuthSecret(spendingSeed, AUTH_NULLIFYING_DOMAIN);
 
   const eddsaSeed = new Uint8Array(spendingSeed);
-  const spendingPrivKey = scalarFromBytes(spendingSeed);
-  const spendingPubKey = babyJubMul(spendingPrivKey, BABYJUB_BASE8);
+  // Spending keypair must use the circomlibjs EdDSA derivation that signing uses
+  // (same as deriveKeysFromWallet/deriveKeysFromSeedCircuit), else notes are unspendable.
+  const spendingPubKey = await eddsaGetPubKey(eddsaSeed);
+  const spendingPrivKey = await eddsaGetPrivScalar(eddsaSeed);
   const nullifyingKey = scalarFromBytes(nullifyingSeed);
   const viewingPubKey = ed25519GetPublicKey(viewingPrivKey);
   const identityHash = sha256(
@@ -512,13 +514,13 @@ export function deriveKeysFromAuthSignature(
   };
 }
 
-export function setupKeysFromAuthSignature(
+export async function setupKeysFromAuthSignature(
   signature: Uint8Array,
   options: AuthSignatureKeyDerivationOptions = {},
-): AuthSignatureKeySetupResult {
+): Promise<AuthSignatureKeySetupResult> {
   const normalized = normalizeAuthSignature(signature);
   const root = deriveAuthSignatureRoot(normalized, options);
-  const keys = deriveKeysFromAuthSignature(normalized, options);
+  const keys = await deriveKeysFromAuthSignature(normalized, options);
   const stealthMetaAddress = createStealthMetaAddress(keys);
   const encodedStealthAddress = encodeStealthMetaAddress(stealthMetaAddress);
 

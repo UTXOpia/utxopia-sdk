@@ -14,6 +14,7 @@ import {
   type AnnouncementClientConfig,
 } from "./announcement-client";
 import type { OnChainStealthAnnouncement } from "./stealth";
+import { hexToBytes } from "./crypto";
 
 // ---------------------------------------------------------------------------
 // Types
@@ -59,18 +60,6 @@ export interface NullifierPdasResponse {
   pdas: string[];
   total: number;
   latest_slot: number;
-}
-
-// ---------------------------------------------------------------------------
-// Helpers
-// ---------------------------------------------------------------------------
-
-function hexToBytes(hex: string): Uint8Array {
-  const bytes = new Uint8Array(hex.length / 2);
-  for (let i = 0; i < hex.length; i += 2) {
-    bytes[i / 2] = parseInt(hex.substring(i, i + 2), 16);
-  }
-  return bytes;
 }
 
 // ---------------------------------------------------------------------------

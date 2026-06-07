@@ -206,16 +206,19 @@ async function generateProofViaNodeSubprocess(
   const { execFileSync } = _require("child_process");
   const fs = _require("fs");
   const path = _require("path");
+  const os = _require("os");
 
   const wasmPath = path.resolve(artifacts.wasmPath);
   const zkeyPath = path.resolve(artifacts.zkeyPath);
 
-  const tmpDir = path.dirname(wasmPath);
-  const tmpInput = path.join(tmpDir, `_prover_input_${Date.now()}.json`);
-  const tmpProof = path.join(tmpDir, `_prover_proof_${Date.now()}.json`);
-  const tmpPublic = path.join(tmpDir, `_prover_public_${Date.now()}.json`);
+  // Private 0700 tmp dir so the prover input (nullifyingKey, values, leaf indices)
+  // is not world-readable in the shared circuit-artifact dir.
+  const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), "utxopia-prover-"));
+  const tmpInput = path.join(tmpDir, "input.json");
+  const tmpProof = path.join(tmpDir, "proof.json");
+  const tmpPublic = path.join(tmpDir, "public.json");
 
-  fs.writeFileSync(tmpInput, JSON.stringify(inputs));
+  fs.writeFileSync(tmpInput, JSON.stringify(inputs), { mode: 0o600 });
 
   try {
     // Use execFileSync to avoid shell injection via file paths
@@ -242,9 +245,12 @@ async function generateProofViaNodeSubprocess(
 
     return { proof, publicSignals };
   } finally {
+    // Best-effort overwrite-then-remove of the secret-bearing input, then the dir.
+    try { fs.writeFileSync(tmpInput, "0".repeat(64), { mode: 0o600 }); } catch {}
     try { fs.unlinkSync(tmpInput); } catch {}
     try { fs.unlinkSync(tmpProof); } catch {}
     try { fs.unlinkSync(tmpPublic); } catch {}
+    try { fs.rmSync(tmpDir, { recursive: true, force: true }); } catch {}
   }
 }
 
@@ -499,15 +505,12 @@ export async function generateJoinSplitProof(inputs: JoinSplitProofInputs): Prom
     valueOut: inputs.outputs.map(o => o.value.toString()),
   };
 
-  // Build path arrays (2D arrays for circuit)
+  // Circuit derives path-direction bits from leavesIndices, so only siblings are passed.
   const pathElements: string[][] = [];
-  const pathIndices: number[][] = [];
   for (const inp of inputs.inputs) {
     pathElements.push(inp.merkleProof.siblings.map(s => s.toString()));
-    pathIndices.push(inp.merkleProof.indices);
   }
   circuitInputs.pathElements = pathElements as any;
-  circuitInputs.pathIndices = pathIndices as any;
 
   const variantName: CircuitType = `joinsplit_${nInputs}x${nOutputs}`;
   return generateProof(variantName, circuitInputs);

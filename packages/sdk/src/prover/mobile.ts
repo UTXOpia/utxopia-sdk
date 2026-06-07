@@ -204,20 +204,14 @@ function formatCircuitInputs(
   }
   flat["commitmentsOut"] = commitmentsOut.map((c) => c.toString());
 
-  // Merkle proof paths — flatten 2D arrays
-  // pathElements[i][j] and pathIndices[i][j] where i = input index, j = tree level
+  // Flattened siblings pathElements[i][j]; circuit derives path bits from leavesIndices.
   const pathElements: string[] = [];
-  const pathIndices: string[] = [];
   for (const inp of typed.inputs) {
     for (const sibling of inp.merkleProof.siblings) {
       pathElements.push(sibling.toString());
     }
-    for (const idx of inp.merkleProof.indices) {
-      pathIndices.push(idx.toString());
-    }
   }
   flat["pathElements"] = pathElements;
-  flat["pathIndices"] = pathIndices;
 
   return flat;
 }
