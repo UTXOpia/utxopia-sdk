@@ -10,7 +10,7 @@ import {
   type Network,
 } from "@ika.xyz/sdk";
 import { SuiJsonRpcClient } from "@mysten/sui/jsonRpc";
-import { Transaction } from "@mysten/sui/transactions";
+import { Transaction, type TransactionObjectArgument } from "@mysten/sui/transactions";
 import type { SuiUnsignedTransaction } from "../../sdk-core/src/index";
 
 export interface UTXOpiaSuiIkaConfig {
@@ -107,7 +107,7 @@ export class UTXOpiaSuiIkaAdapter {
       suiCoin,
     });
     const returnAddress = ikaReturnAddress(this.config.suiPaymentReturnAddress);
-    tx.transferObjects([presignSession], tx.pure.address(returnAddress));
+    tx.transferObjects([asSuiObjectArgument(presignSession)], tx.pure.address(returnAddress));
     returnSuiPaymentCoinIfNeeded(tx, suiCoinObjectId, suiCoin, returnAddress);
 
     return buildIkaPtb(this.config.rpcUrl, tx, "Ika global Taproot presign request PTB", this.ikaConfig, [
@@ -245,6 +245,10 @@ function returnSuiPaymentCoinIfNeeded(
     return;
   }
   tx.transferObjects([suiCoin], tx.pure.address(ikaReturnAddress(returnAddress)));
+}
+
+function asSuiObjectArgument(value: unknown): TransactionObjectArgument {
+  return value as TransactionObjectArgument;
 }
 
 function ikaReturnAddress(returnAddress?: string): string {
