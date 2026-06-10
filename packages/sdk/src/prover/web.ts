@@ -105,8 +105,14 @@ async function ensureSnarkjsLoaded(): Promise<void> {
   if (snarkjs) return;
 
   console.log("[Prover] Loading snarkjs module...");
-  const snarkjsModule = "snarkjs";
-  snarkjs = await import(snarkjsModule).catch(() => null);
+  // Prefer an app-provided instance: browser bundlers resolve snarkjs's
+  // `browser` export themselves and hand it over via globalThis, since the
+  // string-indirected import below is (deliberately) opaque to them.
+  snarkjs = (globalThis as { snarkjs?: unknown }).snarkjs ?? null;
+  if (!snarkjs) {
+    const snarkjsModule = "snarkjs";
+    snarkjs = await import(snarkjsModule).catch(() => null);
+  }
 
   if (!snarkjs) {
     throw new Error(
@@ -114,6 +120,46 @@ async function ensureSnarkjsLoaded(): Promise<void> {
         "Install it with: bun add snarkjs"
     );
   }
+}
+
+/**
+ * Fully-downloaded circuit artifacts, keyed by URL. Proving reads zkey
+ * sections non-sequentially; over HTTP that becomes thousands of small
+ * range requests, which dominates proving time. Downloading once into
+ * memory (Railgun-style) makes proving IO-free.
+ */
+const artifactBytesCache = new Map<string, Uint8Array>();
+
+type FastFileMem = { type: "mem"; data: Uint8Array };
+
+async function fetchArtifactToMemory(url: string): Promise<FastFileMem> {
+  const cached = artifactBytesCache.get(url);
+  if (cached) return { type: "mem", data: cached };
+  const res = await fetch(url);
+  if (!res.ok) {
+    throw new Error(`Failed to fetch circuit artifact ${url}: HTTP ${res.status}`);
+  }
+  const bytes = new Uint8Array(await res.arrayBuffer());
+  artifactBytesCache.set(url, bytes);
+  return { type: "mem", data: bytes };
+}
+
+/**
+ * In browsers (or with remote artifact URLs), resolve artifacts to in-memory
+ * fastfile objects; in Node, local file paths are already fast.
+ */
+async function resolveProveArtifacts(
+  artifacts: CircuitArtifact,
+): Promise<{ wasm: string | FastFileMem; zkey: string | FastFileMem }> {
+  const isRemote = artifacts.zkeyPath.startsWith("http://") || artifacts.zkeyPath.startsWith("https://");
+  if (!isBrowser && !isRemote) {
+    return { wasm: artifacts.wasmPath, zkey: artifacts.zkeyPath };
+  }
+  const [wasm, zkey] = await Promise.all([
+    fetchArtifactToMemory(artifacts.wasmPath),
+    fetchArtifactToMemory(artifacts.zkeyPath),
+  ]);
+  return { wasm, zkey };
 }
 
 /**
@@ -161,10 +207,17 @@ async function generateProof(
     publicSignals = result.publicSignals;
   } else {
     await ensureSnarkjsLoaded();
+    const resolved = await resolveProveArtifacts(artifacts);
+    // Browser: ffjavascript's worker pool can deadlock (proofs hang
+    // indefinitely); single-thread proving completes in seconds.
+    const proverOptions = isBrowser ? { singleThread: true } : undefined;
     const result = await snarkjs.groth16.fullProve(
       inputs,
-      artifacts.wasmPath,
-      artifacts.zkeyPath
+      resolved.wasm,
+      resolved.zkey,
+      undefined,
+      undefined,
+      proverOptions
     );
     proof = result.proof;
     publicSignals = result.publicSignals;
@@ -327,10 +380,15 @@ export async function generateGenericGroth16Proof(
     publicSignals = result.publicSignals;
   } else {
     await ensureSnarkjsLoaded();
+    const resolved = await resolveProveArtifacts(artifacts);
+    const proverOptions = isBrowser ? { singleThread: true } : undefined;
     const result = await snarkjs.groth16.fullProve(
       inputs,
-      artifacts.wasmPath,
-      artifacts.zkeyPath,
+      resolved.wasm,
+      resolved.zkey,
+      undefined,
+      undefined,
+      proverOptions,
     );
     proof = result.proof;
     publicSignals = result.publicSignals;
