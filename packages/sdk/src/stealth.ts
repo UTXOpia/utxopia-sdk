@@ -198,10 +198,11 @@ export interface OnChainStealthAnnouncement {
 // ========== Helper Functions ==========
 
 /** Domain separator for stealth key derivation.
- *  "Aegis-stealth-v1" is LOAD-BEARING — every existing stealth address was
- *  derived using this exact byte sequence. The project's name is now
- *  "UTXOpia"; this string stays as-is. A v2 would bump the suffix. */
-const STEALTH_KEY_DOMAIN = new TextEncoder().encode("Aegis-stealth-v1");
+ *  "Utxopia-stealth-v1" is LOAD-BEARING — once real stealth addresses exist this
+ *  exact byte sequence is FROZEN; sender and receiver must use the identical
+ *  value or payments won't be detected. Bump the suffix only as a deliberate
+ *  v2 break. */
+const STEALTH_KEY_DOMAIN = new TextEncoder().encode("Utxopia-stealth-v1");
 
 // tokenId removed — use computeTokenId(mintBytes) from poseidon.ts instead
 
