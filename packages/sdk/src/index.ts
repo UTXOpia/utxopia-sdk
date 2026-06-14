@@ -576,6 +576,10 @@ export {
   type ShieldInstructionOptions,
   buildApproveRedemptionSigningInstructionData,
   buildApproveRedemptionSigningInstruction,
+  // Cancel redemption instruction
+  buildCancelRedemptionInstructionData,
+  buildCancelRedemptionInstruction,
+  type CancelRedemptionInstructionOptions,
   bigintTo32Bytes,
   bytes32ToBigint,
   // JoinSplit transact instruction
