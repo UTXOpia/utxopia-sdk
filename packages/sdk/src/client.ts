@@ -544,6 +544,12 @@ export class UTXOpiaClient {
       redeemAmounts?: string[];
       btcScripts?: string[];
       requestNonces?: string[];
+      /**
+       * Optional frozen source-tree PDA (base58). Set only when a spent note was committed in a
+       * commitment tree that has since been rotated out; the relay inserts it before the proof
+       * buffer so the program can prove membership against that tree. Omit otherwise.
+       */
+      sourceTree?: string;
     },
     relayUrl = this.defaultRelayUrl(),
   ): Promise<{ success: boolean; signature?: string; error?: string }> {
