@@ -27,6 +27,12 @@ export interface BoundParams {
   mode?: BoundParamsMode;
   /** SHA256 of concatenated stealth data (prevents relayer from corrupting change outputs) */
   stealthDataHash: Uint8Array;
+  /**
+   * Requester pubkey (32 bytes) — REQUIRED for redeem. Binds the proof to the signing account
+   * that becomes RedemptionRequest.requester so a privileged orderflow actor cannot replay the
+   * proof under their own key. Ignored for transfer/unshield.
+   */
+  requester?: Uint8Array;
 }
 
 /**
@@ -55,18 +61,22 @@ export function computeStealthDataHash(stealthData: Uint8Array[]): Uint8Array {
  * - unshieldAddress: 32 bytes (zeros if null)
  * - chainId: 8 bytes LE
  * - stealthDataHash: 32 bytes (SHA256 of concatenated stealth data)
+ * - requester: 32 bytes (redeem only — appended, extending the buffer to 109 bytes)
  *
- * Total: 77 bytes → SHA256 → mod BN254
+ * Total: 77 bytes (transfer/unshield) or 109 bytes (redeem) → SHA256 → mod BN254
  */
 export function computeBoundParamsHash(params: BoundParams): bigint {
-  const buf = new Uint8Array(77);
+  const isRedeem = params.mode === 'redeem';
+  // Redeem binds the requester pubkey, extending the preimage by 32 bytes (must match the
+  // on-chain compute_bound_params_hash_redeem layout).
+  const buf = new Uint8Array(isRedeem ? 109 : 77);
   const view = new DataView(buf.buffer);
 
   // treeNumber (4 bytes LE)
   view.setUint32(0, params.treeNumber, true);
 
   // flag byte: transfer=0, unshield=1, redeem=2
-  if (params.mode === 'redeem') {
+  if (isRedeem) {
     buf[4] = 2;
   } else if (params.mode === 'unshield' || params.unshieldAddress) {
     buf[4] = 1;
@@ -90,6 +100,14 @@ export function computeBoundParamsHash(params: BoundParams): bigint {
 
   // stealthDataHash (32 bytes)
   buf.set(params.stealthDataHash.slice(0, 32), 45);
+
+  // requester (32 bytes) — redeem only
+  if (isRedeem) {
+    if (!params.requester || params.requester.length !== 32) {
+      throw new Error("redeem bound params require a 32-byte requester pubkey");
+    }
+    buf.set(params.requester.slice(0, 32), 77);
+  }
 
   // SHA256 → mod BN254
   const hash = sha256(buf);
@@ -132,13 +150,21 @@ export const DEFAULT_BOUND_PARAMS: BoundParams = {
  *
  * For single output: SHA256(script_1) — no special case.
  * For multi-output: SHA256(script_1 || script_2 || ...)
+ *
+ * `requester` is the 32-byte pubkey of the signer that will submit the redeem (becomes
+ * RedemptionRequest.requester); it is bound into the hash so the proof cannot be replayed
+ * under a different signer.
  */
 export function createRedeemBoundParams(
   btcScripts: Uint8Array | Uint8Array[],
   stealthDataHash: Uint8Array,
+  requester: Uint8Array,
   chainId: bigint = 103n,
   treeNumber: number = 0,
 ): BoundParams {
+  if (!requester || requester.length !== 32) {
+    throw new Error("createRedeemBoundParams requires a 32-byte requester pubkey");
+  }
   // Normalize to array
   const scripts = btcScripts instanceof Uint8Array ? [btcScripts] : btcScripts;
   // Concatenate all scripts
@@ -156,6 +182,7 @@ export function createRedeemBoundParams(
     chainId,
     mode: 'redeem',
     stealthDataHash,
+    requester,
   };
 }
 

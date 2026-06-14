@@ -224,19 +224,35 @@ export async function deriveVkRegistryPDA(
 // =============================================================================
 
 /**
- * Derive Deposit Receipt PDA
- * Seeds: ["deposit_receipt", deposit_txid(32)]
+ * Derive Deposit Receipt PDA.
+ *
+ * Two on-chain schemes exist:
+ * - `complete_deposit` (disc 11, the active direct-vault flow): seeds ["deposit_receipt", txid] —
+ *   call WITHOUT `depositVout`.
+ * - `verify_deposit` (disc 25, OP_RETURN-free flow): seeds ["deposit_receipt", txid, vout(4 LE)] —
+ *   pass `depositVout` so a funding tx with multiple independent deposit outputs gets one receipt
+ *   per output (each creditable once) instead of the first output blocking the rest.
  */
 export async function deriveDepositReceiptPDA(
   depositTxid: Uint8Array,
+  depositVout?: number,
   programId: Address = UTXOPIA_PROGRAM_ID
 ): Promise<[Address, number]> {
   if (depositTxid.length !== 32) {
     throw new Error(`depositTxid must be 32 bytes, got ${depositTxid.length}`);
   }
+  const seeds: Uint8Array[] = [new TextEncoder().encode("deposit_receipt"), depositTxid];
+  if (depositVout !== undefined) {
+    if (!Number.isInteger(depositVout) || depositVout < 0 || depositVout > 0xffffffff) {
+      throw new Error(`depositVout must be a u32, got ${depositVout}`);
+    }
+    const voutLe = new Uint8Array(4);
+    new DataView(voutLe.buffer).setUint32(0, depositVout, true);
+    seeds.push(voutLe);
+  }
   const result = await getProgramDerivedAddress({
     programAddress: programId,
-    seeds: [new TextEncoder().encode("deposit_receipt"), depositTxid],
+    seeds,
   });
   return [result[0], result[1]];
 }

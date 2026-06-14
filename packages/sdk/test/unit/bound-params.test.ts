@@ -24,6 +24,8 @@ import { bigintTo32Bytes } from "../../src/instructions";
 describe("boundParamsHash cross-language parity", () => {
   const CHAIN_ID = 103n;
   const ZERO_STEALTH = new Uint8Array(32);
+  // Fixed requester for redeem cross-layer vectors (mirrors the Rust test).
+  const REQ = new Uint8Array(32).fill(0xDD);
 
   it("transfer: chain_id=103, zero stealth", () => {
     const params = createTransferBoundParams(ZERO_STEALTH, CHAIN_ID);
@@ -85,18 +87,20 @@ describe("boundParamsHash cross-language parity", () => {
     expect(hashHex).toBe("0d9a935c0e397e121313f4aaebdda5f5da92ba4dd6daae85e6934a150d97dd0f");
   });
 
-  it("redeem: chain_id=103, btcScript=5120+0xBB*32, zero stealth", () => {
+  it("redeem: chain_id=103, btcScript=5120+0xBB*32, zero stealth, requester=0xDD*32", () => {
     const script = new Uint8Array(34);
     script[0] = 0x51;
     script[1] = 0x20;
     script.fill(0xBB, 2);
-    const params = createRedeemBoundParams(script, ZERO_STEALTH, CHAIN_ID);
+    const params = createRedeemBoundParams(script, ZERO_STEALTH, REQ, CHAIN_ID);
     const hash = computeBoundParamsHash(params);
     const hashBytes = bigintTo32Bytes(hash);
     const hashHex = Array.from(hashBytes).map(b => b.toString(16).padStart(2, "0")).join("");
 
-    // Must match Rust VECTOR_redeem (unchanged — single script SHA256 same as before)
-    expect(hashHex).toBe("09c09ef658e863fbf480678e3459ddbd7b3684484742a832213c306a5816a845");
+    // Cross-layer vector — must equal compute_bound_params_hash_redeem on-chain
+    // (Rust test: redeem_bound_params_binds_requester). Changed from the pre-#9 value
+    // because the 32-byte requester is now appended to the hashed preimage.
+    expect(hashHex).toBe("0a2d4cdcdeff70c6c7036a7177b3a9380e838ea433471280fd1a5a7ba4ae2e28");
   });
 
   it("transfer with non-zero stealth: chain_id=103, stealth=0xCC*32", () => {
@@ -126,10 +130,10 @@ describe("boundParamsHash cross-language parity", () => {
     const script1 = new Uint8Array([0x51, 0x20, 0xAA, 0xBB]);
     const script2 = new Uint8Array([0x51, 0x20, 0xCC, 0xDD]);
     const singleHash = computeBoundParamsHash(
-      createRedeemBoundParams(script1, ZERO_STEALTH, CHAIN_ID)
+      createRedeemBoundParams(script1, ZERO_STEALTH, REQ, CHAIN_ID)
     );
     const multiHash = computeBoundParamsHash(
-      createRedeemBoundParams([script1, script2], ZERO_STEALTH, CHAIN_ID)
+      createRedeemBoundParams([script1, script2], ZERO_STEALTH, REQ, CHAIN_ID)
     );
     expect(singleHash).not.toBe(multiHash);
   });
@@ -164,6 +168,7 @@ describe("computeStealthDataHash", () => {
 
 describe("boundParamsHash properties", () => {
   const STEALTH = new Uint8Array(32);
+  const REQ = new Uint8Array(32).fill(0xDD);
 
   it("different modes produce different hashes", () => {
     const transfer = computeBoundParamsHash(createTransferBoundParams(STEALTH));
@@ -171,7 +176,7 @@ describe("boundParamsHash properties", () => {
       createUnshieldBoundParams(new Uint8Array(32), STEALTH)
     );
     const redeem = computeBoundParamsHash(
-      createRedeemBoundParams(new Uint8Array([0x51, 0x20]), STEALTH)
+      createRedeemBoundParams(new Uint8Array([0x51, 0x20]), STEALTH, REQ)
     );
     expect(transfer).not.toBe(unshield);
     expect(transfer).not.toBe(redeem);
@@ -190,8 +195,8 @@ describe("boundParamsHash properties", () => {
     const stealth = new Uint8Array(32);
     const scriptA = new Uint8Array([0x51, 0x20, 0xAA]);
     const scriptB = new Uint8Array([0x51, 0x20, 0xBB]);
-    const hashA = computeBoundParamsHash(createRedeemBoundParams(scriptA, stealth));
-    const hashB = computeBoundParamsHash(createRedeemBoundParams(scriptB, stealth));
+    const hashA = computeBoundParamsHash(createRedeemBoundParams(scriptA, stealth, REQ));
+    const hashB = computeBoundParamsHash(createRedeemBoundParams(scriptB, stealth, REQ));
     expect(hashA).not.toBe(hashB);
   });
 });

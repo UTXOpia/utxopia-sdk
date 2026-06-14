@@ -131,9 +131,9 @@ describe("deriveNullifierRecordPDA", () => {
 });
 
 describe("deriveDepositReceiptPDA", () => {
-  test("returns valid PDA tuple", async () => {
+  test("returns valid PDA tuple (txid-only / complete_deposit scheme)", async () => {
     const txid = new Uint8Array(32).fill(0xcc);
-    const [address, bump] = await deriveDepositReceiptPDA(txid, TEST_PROGRAM_ID);
+    const [address, bump] = await deriveDepositReceiptPDA(txid, undefined, TEST_PROGRAM_ID);
     expect(typeof address).toBe("string");
     expect(address.length).toBeGreaterThan(30);
     expect(bump).toBeGreaterThanOrEqual(0);
@@ -142,15 +142,26 @@ describe("deriveDepositReceiptPDA", () => {
 
   test("deterministic - same txid gives same PDA", async () => {
     const txid = new Uint8Array(32).fill(0xdd);
-    const [addr1, bump1] = await deriveDepositReceiptPDA(txid, TEST_PROGRAM_ID);
-    const [addr2, bump2] = await deriveDepositReceiptPDA(txid, TEST_PROGRAM_ID);
+    const [addr1, bump1] = await deriveDepositReceiptPDA(txid, undefined, TEST_PROGRAM_ID);
+    const [addr2, bump2] = await deriveDepositReceiptPDA(txid, undefined, TEST_PROGRAM_ID);
     expect(addr1).toBe(addr2);
     expect(bump1).toBe(bump2);
   });
 
+  test("vout changes the PDA (verify_deposit scheme) and is deterministic", async () => {
+    const txid = new Uint8Array(32).fill(0xab);
+    const [base] = await deriveDepositReceiptPDA(txid, undefined, TEST_PROGRAM_ID);
+    const [v0a] = await deriveDepositReceiptPDA(txid, 0, TEST_PROGRAM_ID);
+    const [v0b] = await deriveDepositReceiptPDA(txid, 0, TEST_PROGRAM_ID);
+    const [v1] = await deriveDepositReceiptPDA(txid, 1, TEST_PROGRAM_ID);
+    expect(v0a).toBe(v0b);
+    expect(v0a).not.toBe(v1);
+    expect(v0a).not.toBe(base); // vout-keyed differs from txid-only
+  });
+
   test("rejects non-32-byte txid", async () => {
     const badTxid = new Uint8Array(16).fill(0xee);
-    await expect(deriveDepositReceiptPDA(badTxid, TEST_PROGRAM_ID)).rejects.toThrow(
+    await expect(deriveDepositReceiptPDA(badTxid, undefined, TEST_PROGRAM_ID)).rejects.toThrow(
       "depositTxid must be 32 bytes"
     );
   });
