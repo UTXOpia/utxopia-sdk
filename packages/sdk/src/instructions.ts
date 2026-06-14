@@ -426,6 +426,98 @@ export function buildCompleteRedemptionInstruction(
 }
 
 // =============================================================================
+// Cancel Redemption Instruction Builder
+// =============================================================================
+
+/** Cancel redemption instruction options */
+export interface CancelRedemptionInstructionOptions {
+  /** Note public key for the re-minted commitment (32 bytes) */
+  npk: Uint8Array;
+  accounts: {
+    /** Original requester (signer; receives the closed request's rent) */
+    user: Address;
+    poolState: Address;
+    redemptionRequest: Address;
+    commitmentTree: Address;
+    tokenConfig: Address;
+    /**
+     * Reserved UtxoRecord PDAs to release. Required when the request was in
+     * Processing (mark_processing reserved these UTXOs); pass [] / omit for a
+     * Pending cancel, which never reserved any. The program rejects a mismatch.
+     */
+    reservedUtxos?: Address[];
+  };
+}
+
+/**
+ * Build cancel redemption instruction data.
+ *
+ * Layout (after disc stripped by entrypoint):
+ * - npk:        [u8; 32]
+ * - utxo_count: u8  (number of reserved UtxoRecord accounts that follow; 0 for Pending)
+ */
+export function buildCancelRedemptionInstructionData(options: {
+  npk: Uint8Array;
+  reservedUtxoCount: number;
+}): Uint8Array {
+  const { npk, reservedUtxoCount } = options;
+  if (npk.length !== 32) {
+    throw new Error("npk must be 32 bytes");
+  }
+  // disc(1) + npk(32) + utxo_count(1)
+  const data = new Uint8Array(1 + 32 + 1);
+  let offset = 0;
+  data[offset++] = INSTRUCTION.CANCEL_REDEMPTION;
+  data.set(npk, offset);
+  offset += 32;
+  data[offset++] = reservedUtxoCount;
+  return data;
+}
+
+/**
+ * Build a cancel redemption instruction.
+ *
+ * Accounts (6 base + variable):
+ * 0. user (writable signer)
+ * 1. pool_state (writable)
+ * 2. redemption_request (writable)
+ * 3. commitment_tree (writable)
+ * 4. system_program (readonly)
+ * 5. token_config (writable)
+ * 6..6+N reserved UtxoRecord PDAs (writable) — Processing cancels only
+ */
+export function buildCancelRedemptionInstruction(
+  options: CancelRedemptionInstructionOptions
+): Instruction {
+  const config = getConfig();
+  const reservedUtxos = options.accounts.reservedUtxos ?? [];
+
+  const data = buildCancelRedemptionInstructionData({
+    npk: options.npk,
+    reservedUtxoCount: reservedUtxos.length,
+  });
+
+  const accounts: Instruction["accounts"] = [
+    { address: options.accounts.user, role: AccountRole.WRITABLE_SIGNER },
+    { address: options.accounts.poolState, role: AccountRole.WRITABLE },
+    { address: options.accounts.redemptionRequest, role: AccountRole.WRITABLE },
+    { address: options.accounts.commitmentTree, role: AccountRole.WRITABLE },
+    { address: SYSTEM_PROGRAM_ADDRESS, role: AccountRole.READONLY },
+    { address: options.accounts.tokenConfig, role: AccountRole.WRITABLE },
+  ];
+
+  for (const utxo of reservedUtxos) {
+    accounts.push({ address: utxo, role: AccountRole.WRITABLE });
+  }
+
+  return {
+    programAddress: config.utxopiaProgramId,
+    accounts,
+    data,
+  };
+}
+
+// =============================================================================
 // JoinSplit Transact Instruction Builder
 // =============================================================================
 

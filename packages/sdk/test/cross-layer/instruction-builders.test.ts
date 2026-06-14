@@ -33,6 +33,8 @@ import {
   buildRedeemInstructionData,
   buildCompleteRedemptionInstructionData,
   buildCompleteRedemptionInstruction,
+  buildCancelRedemptionInstructionData,
+  buildCancelRedemptionInstruction,
 } from "../../src/instructions";
 
 // =============================================================================
@@ -51,6 +53,7 @@ const DISC_UNSHIELD = 14;
 const DISC_REDEEM = 15;
 const DISC_RESERVED_REQUEST_REDEMPTION = 16;
 const DISC_COMPLETE_REDEMPTION = 17;
+const DISC_CANCEL_REDEMPTION = 19;
 
 // =============================================================================
 // Helpers
@@ -1128,6 +1131,81 @@ describe("Cross-layer: buildCompleteRedemptionInstructionData (disc=17)", () => 
       const cd = data.slice(1);
       const parsed = new DataView(cd.buffer, cd.byteOffset).getUint32(32, true);
       expect(parsed).toBe(txSize);
+    });
+  });
+});
+
+// =============================================================================
+// CANCEL REDEMPTION (disc 19) — contracts/programs/utxopia/src/instructions/cancel_redemption.rs
+// =============================================================================
+
+describe("Cross-layer: buildCancelRedemptionInstructionData (disc=19)", () => {
+  /**
+   * Rust layout (data received AFTER disc stripped):
+   * [0..32]  npk:        [u8; 32]
+   * [32]     utxo_count: u8  (reserved UtxoRecords released; 0 for Pending cancels)
+   */
+  describe("discriminator and length", () => {
+    it("first byte is 19; total = disc(1) + npk(32) + utxo_count(1) = 34", () => {
+      const data = buildCancelRedemptionInstructionData({ npk: filledBytes(32, 0xcd), reservedUtxoCount: 0 });
+      expect(data[0]).toBe(DISC_CANCEL_REDEMPTION);
+      expect(data.length).toBe(1 + 32 + 1);
+    });
+  });
+
+  describe("field offsets match Rust parsing", () => {
+    it("npk at 0, utxo_count at 32 (after disc stripped)", () => {
+      const npk = filledBytes(32, 0xbe);
+      const data = buildCancelRedemptionInstructionData({ npk, reservedUtxoCount: 3 });
+      const cd = data.slice(1);
+      // Rust: npk.copy_from_slice(&data[0..32]); utxo_count = data[32]
+      expect(cd.slice(0, 32)).toEqual(npk);
+      expect(cd[32]).toBe(3);
+    });
+
+    it("rejects npk that is not 32 bytes", () => {
+      expect(() => buildCancelRedemptionInstructionData({ npk: filledBytes(31, 0x01), reservedUtxoCount: 0 })).toThrow();
+    });
+  });
+
+  describe("account count and order", () => {
+    it("Pending cancel (no reserved UTXOs): 6 base accounts", () => {
+      const ix = buildCancelRedemptionInstruction({
+        npk: filledBytes(32, 0xaa),
+        accounts: {
+          user: fakeAddress("user"),
+          poolState: fakeAddress("pool"),
+          redemptionRequest: fakeAddress("rr"),
+          commitmentTree: fakeAddress("tree"),
+          tokenConfig: fakeAddress("tc"),
+        },
+      });
+      expect(ix.accounts.length).toBe(6);
+      expect(ix.accounts[0].role).toBe(AccountRole.WRITABLE_SIGNER); // user
+      expect(ix.accounts[1].role).toBe(AccountRole.WRITABLE);        // pool_state
+      expect(ix.accounts[2].role).toBe(AccountRole.WRITABLE);        // redemption_request
+      expect(ix.accounts[3].role).toBe(AccountRole.WRITABLE);        // commitment_tree
+      expect(ix.accounts[4].role).toBe(AccountRole.READONLY);        // system_program
+      expect(ix.accounts[5].role).toBe(AccountRole.WRITABLE);        // token_config
+      expect(ix.data[33]).toBe(0); // utxo_count = 0
+    });
+
+    it("Processing cancel: utxo_count and reserved UTXO accounts appended (writable)", () => {
+      const ix = buildCancelRedemptionInstruction({
+        npk: filledBytes(32, 0xaa),
+        accounts: {
+          user: fakeAddress("user"),
+          poolState: fakeAddress("pool"),
+          redemptionRequest: fakeAddress("rr"),
+          commitmentTree: fakeAddress("tree"),
+          tokenConfig: fakeAddress("tc"),
+          reservedUtxos: [fakeAddress("u0"), fakeAddress("u1")],
+        },
+      });
+      expect(ix.accounts.length).toBe(8); // 6 + 2
+      expect(ix.accounts[6].role).toBe(AccountRole.WRITABLE);
+      expect(ix.accounts[7].role).toBe(AccountRole.WRITABLE);
+      expect(ix.data[33]).toBe(2); // utxo_count == reservedUtxos.length
     });
   });
 });
