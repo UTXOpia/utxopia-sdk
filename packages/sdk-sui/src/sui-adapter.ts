@@ -276,7 +276,9 @@ export class UTXOpiaSuiAdapter implements UTXOpiaChainAdapter {
       bytesFromHexOrUtf8(requiredValue(input.btcAddress, "btcAddress")),
     ];
     const amountsSats = input.amountsSats ?? [requiredValue(input.amountSats, "amountSats")];
-    const maxFeesSats = input.maxFeesSats ?? [requiredValue(input.maxFeeSats, "maxFeeSats")];
+    // Note: the on-chain redeem no longer accepts a per-request fee cap. The miner-fee
+    // ceiling is a protocol constant (redemption::MAX_FEE_SATS) so it can't be tampered
+    // with via proof replay. Any maxFeeSats/maxFeesSats input fields are ignored.
     const nPublicOutputs = input.nPublicOutputs ?? btcScripts.length;
     const nOutputs = input.nOutputs ?? input.commitmentsOut.length;
     const stealthData = input.stealthData ?? [];
@@ -287,9 +289,8 @@ export class UTXOpiaSuiAdapter implements UTXOpiaChainAdapter {
     if (
       nPublicOutputs !== btcScripts.length
       || nPublicOutputs !== amountsSats.length
-      || nPublicOutputs !== maxFeesSats.length
     ) {
-      throw new Error("Sui redemption public output count must match btcScripts, amountsSats, and maxFeesSats");
+      throw new Error("Sui redemption public output count must match btcScripts and amountsSats");
     }
     if (stealthData.length !== nOutputs - nPublicOutputs) {
       throw new Error("Sui redemption stealthData count must match tree output count");
@@ -333,7 +334,6 @@ export class UTXOpiaSuiAdapter implements UTXOpiaChainAdapter {
         tx.pure("vector<vector<u8>>", input.commitmentsOut.map((bytes) => Array.from(bytes))),
         tx.pure("vector<vector<u8>>", btcScripts.map((bytes) => Array.from(bytes))),
         tx.pure("vector<u64>", amountsSats.map((amount) => amount.toString())),
-        tx.pure("vector<u64>", maxFeesSats.map((fee) => fee.toString())),
         tx.pure("vector<vector<u8>>", stealthData.map((bytes) => Array.from(bytes))),
       ],
     });
