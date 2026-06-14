@@ -4,41 +4,15 @@ import { hexToBytes } from "../../src/crypto";
 
 const ALL_ZEROS_HEX =
   "0000000000000000000000000000000000000000000000000000000000000000";
-const FROST_HEX =
-  "29485d031f6ad1ab0c4ca7183bef6cb9ce2d914d0bec8dc842a6962f0fcc3362";
 const IKA_HEX =
   "79be667ef9dcbbac55a06295ce870b07029bfcdb2dce28d959f2815b16f81798";
 
-describe("pickCustodyInternalKey (Ika-first dispatch)", () => {
-  it("returns Ika pubkey when set", () => {
+describe("pickCustodyInternalKey (Ika-only)", () => {
+  it("returns the Ika pubkey when set", () => {
     const key = pickCustodyInternalKey({
       ikaDwalletXOnlyPubkey: IKA_HEX,
-      groupPubKey: FROST_HEX,
     });
     expect(Array.from(key)).toEqual(Array.from(hexToBytes(IKA_HEX)));
-  });
-
-  it("falls back to FROST groupPubKey when Ika is all-zero", () => {
-    const key = pickCustodyInternalKey({
-      ikaDwalletXOnlyPubkey: ALL_ZEROS_HEX,
-      groupPubKey: FROST_HEX,
-    });
-    expect(Array.from(key)).toEqual(Array.from(hexToBytes(FROST_HEX)));
-  });
-
-  it("falls back to FROST when ikaDwalletXOnlyPubkey is undefined", () => {
-    const key = pickCustodyInternalKey({
-      groupPubKey: FROST_HEX,
-    });
-    expect(Array.from(key)).toEqual(Array.from(hexToBytes(FROST_HEX)));
-  });
-
-  it("falls back to FROST when ikaDwalletXOnlyPubkey is empty string", () => {
-    const key = pickCustodyInternalKey({
-      ikaDwalletXOnlyPubkey: "",
-      groupPubKey: FROST_HEX,
-    });
-    expect(Array.from(key)).toEqual(Array.from(hexToBytes(FROST_HEX)));
   });
 
   it("Ika pubkey of all-f's still counts as set (any non-zero hex digit)", () => {
@@ -46,8 +20,25 @@ describe("pickCustodyInternalKey (Ika-first dispatch)", () => {
       "ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff";
     const key = pickCustodyInternalKey({
       ikaDwalletXOnlyPubkey: allF,
-      groupPubKey: FROST_HEX,
     });
     expect(Array.from(key)).toEqual(Array.from(hexToBytes(allF)));
+  });
+
+  it("throws when Ika pubkey is all-zero (PoolConfig not initialized)", () => {
+    expect(() =>
+      pickCustodyInternalKey({ ikaDwalletXOnlyPubkey: ALL_ZEROS_HEX }),
+    ).toThrow(/ika_dwallet_xonly_pubkey/);
+  });
+
+  it("throws when ikaDwalletXOnlyPubkey is undefined", () => {
+    expect(() => pickCustodyInternalKey({})).toThrow(
+      /ika_dwallet_xonly_pubkey/,
+    );
+  });
+
+  it("throws when ikaDwalletXOnlyPubkey is empty string", () => {
+    expect(() =>
+      pickCustodyInternalKey({ ikaDwalletXOnlyPubkey: "" }),
+    ).toThrow(/ika_dwallet_xonly_pubkey/);
   });
 });

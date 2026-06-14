@@ -1316,6 +1316,99 @@ export function buildCompleteDepositInstructionData(params: {
 }
 
 // =============================================================================
+// UTXOpia Set Pool Config (disc=2)
+// =============================================================================
+
+/** PoolConfig account discriminator (0x0a) */
+export const POOL_CONFIG_DISCRIMINATOR = 0x0a;
+
+/** Serialized PoolConfig account length (bytes) */
+export const POOL_CONFIG_LEN = 129;
+
+/** Max pool_script (P2TR scriptPubKey) length */
+export const POOL_SCRIPT_MAX_LEN = 34;
+
+/**
+ * Build set_pool_config instruction data (disc=2).
+ *
+ * Strict payload — the program rejects any other shape:
+ *   disc(1)
+ *   + pool_script_len(1)
+ *   + pool_script(N, 1..=34)
+ *   + ika_dwallet(32)
+ *   + ika_dwallet_xonly_pubkey(32)
+ *   + cpi_authority_bump(1)
+ *
+ * `group_pub_key` is no longer part of PoolConfig and must not be sent.
+ */
+export function buildSetPoolConfigInstructionData(params: {
+  poolScript: Uint8Array;
+  ikaDwallet: Uint8Array;
+  ikaDwalletXonlyPubkey: Uint8Array;
+  cpiAuthorityBump: number;
+}): Uint8Array {
+  const { poolScript, ikaDwallet, ikaDwalletXonlyPubkey, cpiAuthorityBump } = params;
+  if (poolScript.length < 1 || poolScript.length > POOL_SCRIPT_MAX_LEN) {
+    throw new Error(`poolScript length must be 1..=${POOL_SCRIPT_MAX_LEN}, got ${poolScript.length}`);
+  }
+  if (ikaDwallet.length !== 32) {
+    throw new Error(`ikaDwallet must be 32 bytes, got ${ikaDwallet.length}`);
+  }
+  if (ikaDwalletXonlyPubkey.length !== 32) {
+    throw new Error(`ikaDwalletXonlyPubkey must be 32 bytes, got ${ikaDwalletXonlyPubkey.length}`);
+  }
+
+  const data = new Uint8Array(1 + 1 + poolScript.length + 32 + 32 + 1);
+  let offset = 0;
+  data[offset++] = INSTRUCTION.SET_POOL_CONFIG;
+  data[offset++] = poolScript.length;
+  data.set(poolScript, offset); offset += poolScript.length;
+  data.set(ikaDwallet, offset); offset += 32;
+  data.set(ikaDwalletXonlyPubkey, offset); offset += 32;
+  data[offset++] = cpiAuthorityBump;
+  return data;
+}
+
+/** Parsed PoolConfig account (Ika-only, 129 bytes) */
+export interface ParsedPoolConfig {
+  discriminator: number;
+  poolScriptLen: number;
+  poolScript: Uint8Array;
+  ikaDwallet: Uint8Array;
+  ikaDwalletXonlyPubkey: Uint8Array;
+  cpiAuthorityBump: number;
+}
+
+/**
+ * Parse a PoolConfig account.
+ *
+ * Layout (fixed offsets — pool_script is a 34-byte field regardless of len):
+ *   disc(1) @0, pool_script_len(1) @1, pool_script(34) @2,
+ *   ika_dwallet(32) @36, ika_dwallet_xonly_pubkey(32) @68,
+ *   cpi_authority_bump(1) @100, reserved(28) @101
+ */
+export function parsePoolConfig(data: Uint8Array): ParsedPoolConfig {
+  if (data.length < POOL_CONFIG_LEN) {
+    throw new Error(`PoolConfig account too small: ${data.length} < ${POOL_CONFIG_LEN}`);
+  }
+  if (data[0] !== POOL_CONFIG_DISCRIMINATOR) {
+    throw new Error(`Invalid PoolConfig discriminator: 0x${data[0].toString(16)}`);
+  }
+  const poolScriptLen = data[1];
+  if (poolScriptLen > POOL_SCRIPT_MAX_LEN) {
+    throw new Error(`Invalid pool script length: ${poolScriptLen}`);
+  }
+  return {
+    discriminator: data[0],
+    poolScriptLen,
+    poolScript: data.subarray(2, 2 + poolScriptLen),
+    ikaDwallet: data.subarray(36, 68),
+    ikaDwalletXonlyPubkey: data.subarray(68, 100),
+    cpiAuthorityBump: data[100],
+  };
+}
+
+// =============================================================================
 // Utility Exports
 // =============================================================================
 

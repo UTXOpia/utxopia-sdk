@@ -151,7 +151,7 @@ async function initPoolIfNeeded(conn: Connection, auth: Keypair) {
   await sendAndConfirmTransaction(conn, tx1, [auth, mintKp], { commitment: "confirmed" });
 
   const poolVault = ata(mintKp.publicKey, poolState);
-  const frostVault = ata(mintKp.publicKey, auth.publicKey);
+  const depositVault = ata(mintKp.publicKey, auth.publicKey);
   const makeAta = (vault: PublicKey, owner: PublicKey) => new TransactionInstruction({
     programId: ATA_PROGRAM, data: Buffer.alloc(0),
     keys: [
@@ -163,7 +163,7 @@ async function initPoolIfNeeded(conn: Connection, auth: Keypair) {
       { pubkey: TOKEN_2022, isSigner: false, isWritable: false },
     ],
   });
-  const tx2 = new Transaction().add(makeAta(poolVault, poolState), makeAta(frostVault, auth.publicKey));
+  const tx2 = new Transaction().add(makeAta(poolVault, poolState), makeAta(depositVault, auth.publicKey));
   tx2.feePayer = auth.publicKey;
   tx2.recentBlockhash = (await conn.getLatestBlockhash()).blockhash;
   await sendAndConfirmTransaction(conn, tx2, [auth], { commitment: "confirmed" });
@@ -177,7 +177,7 @@ async function initPoolIfNeeded(conn: Connection, auth: Keypair) {
       { pubkey: commitTree, isSigner: false, isWritable: true },
       { pubkey: mintKp.publicKey, isSigner: false, isWritable: false },
       { pubkey: poolVault, isSigner: false, isWritable: false },
-      { pubkey: frostVault, isSigner: false, isWritable: false },
+      { pubkey: depositVault, isSigner: false, isWritable: false },
       { pubkey: auth.publicKey, isSigner: true, isWritable: true },
       { pubkey: SystemProgram.programId, isSigner: false, isWritable: false },
     ],

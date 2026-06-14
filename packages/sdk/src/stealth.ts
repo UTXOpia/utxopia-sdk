@@ -386,27 +386,27 @@ export interface NonInteractiveDepositWithRefundResult extends NonInteractiveDep
  * script-path with a time-locked refund spending condition (144 blocks).
  *
  * @param recipientMeta - Recipient's stealth meta-address
- * @param groupPubKey - FROST group public key (32-byte x-only), used as Taproot internal key
+ * @param custodyInternalKey - Pool custody x-only pubkey (32 bytes), used as the Taproot internal key
  * @param network - Bitcoin network for address encoding
  * @param userRefundPubkey - Optional 32-byte x-only pubkey for refund script path
  */
 export async function createNonInteractiveDeposit(
   recipientMeta: StealthMetaAddress,
-  groupPubKey: Uint8Array,
+  custodyInternalKey: Uint8Array,
   network?: "mainnet" | "testnet" | "regtest",
   userRefundPubkey?: undefined,
   opReturnContext?: DepositOpReturnContext,
 ): Promise<NonInteractiveDepositResult>;
 export async function createNonInteractiveDeposit(
   recipientMeta: StealthMetaAddress,
-  groupPubKey: Uint8Array,
+  custodyInternalKey: Uint8Array,
   network: "mainnet" | "testnet" | "regtest",
   userRefundPubkey: Uint8Array,
   opReturnContext: DepositOpReturnContext,
 ): Promise<NonInteractiveDepositWithRefundResult>;
 export async function createNonInteractiveDeposit(
   recipientMeta: StealthMetaAddress,
-  groupPubKey: Uint8Array,
+  custodyInternalKey: Uint8Array,
   network: "mainnet" | "testnet" | "regtest" = "testnet",
   userRefundPubkey?: Uint8Array,
   opReturnContext?: DepositOpReturnContext,
@@ -440,7 +440,7 @@ export async function createNonInteractiveDeposit(
       merkleRoot,
       controlBlock,
       refundScript,
-    } = deriveTaprootAddressWithRefund(npk, userRefundPubkey, groupPubKey, network);
+    } = deriveTaprootAddressWithRefund(npk, userRefundPubkey, custodyInternalKey, network);
 
     // Still build OP_RETURN so the backend can detect the deposit
     const opReturnPayload = buildDepositOpReturn(ephemeralPub, npk, opReturnContext);
@@ -459,7 +459,7 @@ export async function createNonInteractiveDeposit(
 
   // Standard path: key-path-only Taproot address
   const { deriveTaprootAddress, buildDepositOpReturn } = await import("./taproot");
-  const { address: btcAddress, outputKey } = deriveTaprootAddress(npk, network, groupPubKey);
+  const { address: btcAddress, outputKey } = deriveTaprootAddress(npk, network, custodyInternalKey);
 
   const opReturnPayload = buildDepositOpReturn(ephemeralPub, npk, opReturnContext);
 
@@ -546,13 +546,19 @@ export function isDirectVaultDepositMode(mode?: string): boolean {
 
 /**
  * Choose the Taproot internal key for deposit-address derivation.
+ * The Ika dWallet x-only pubkey is the sole custody key; throws if unset.
  * Exported for unit tests; non-test callers should use `createDepositFromConfig`.
  */
 export function pickCustodyInternalKey(config: {
   ikaDwalletXOnlyPubkey?: string;
-  groupPubKey: string;
 }): Uint8Array {
-  return pickIkaCustodyKey(config) ?? hexToBytes(config.groupPubKey);
+  const ikaKey = pickIkaCustodyKey(config);
+  if (!ikaKey) {
+    throw new Error(
+      "PoolConfig.ika_dwallet_xonly_pubkey is required; pool custody key is not configured",
+    );
+  }
+  return ikaKey;
 }
 
 export function pickIkaCustodyKey(config: {

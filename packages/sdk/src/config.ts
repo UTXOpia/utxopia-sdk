@@ -131,16 +131,10 @@ export interface NetworkConfig {
   // Pool Keys
   // -------------------------------------------------------------------------
 
-  /** FROST group public key (x-only, hex-encoded 64 chars = 32 bytes).
-   *  Legacy. Used as the Taproot internal key only when `ikaDwalletXOnlyPubkey`
-   *  is unset / all-zero. New deployments leave this all-zero and rely on Ika.
-   *  Fetched once from GET /api/pool/info and cached. */
-  groupPubKey: string;
-
   /** Ika dWallet x-only secp256k1 pubkey (hex, 64 chars = 32 bytes).
-   *  When set (non-zero), this replaces `groupPubKey` as the Taproot internal
-   *  key for deposit-address derivation. Read from `pool_config.ika_dwallet_xonly_pubkey`
-   *  on chain. All-zero indicates a legacy FROST-controlled pool. */
+   *  The sole Taproot internal key for deposit-address derivation. Read from
+   *  `pool_config.ika_dwallet_xonly_pubkey` (offset 68..100) on chain. All-zero
+   *  indicates the pool's PoolConfig has not been initialized yet. */
   ikaDwalletXOnlyPubkey: string;
 
   /** BTC deposit custody mode.
@@ -265,8 +259,6 @@ export const DEVNET_CONFIG: NetworkConfig = {
     "4x1": "0362b306b17dae916d836d9448a26c97e51b1b0a1a0ed052ebfbd4800e5000cf",
   },
 
-  // Pool group key (FROST 2-of-3 DKG output, x-only secp256k1) — legacy.
-  groupPubKey: "29485d031f6ad1ab0c4ca7183bef6cb9ce2d914d0bec8dc842a6962f0fcc3362",
   // Ika dWallet x-only pubkey — populated by ./scripts/sync-env.sh from devnet-state.json.
   ikaDwalletXOnlyPubkey:
     "0000000000000000000000000000000000000000000000000000000000000000",
@@ -323,8 +315,6 @@ export const MAINNET_CONFIG: NetworkConfig = {
 
   joinSplitVkHashes: {},
 
-  // Pool group key (placeholder — not yet deployed)
-  groupPubKey: "0000000000000000000000000000000000000000000000000000000000000000",
   ikaDwalletXOnlyPubkey:
     "0000000000000000000000000000000000000000000000000000000000000000",
 
@@ -386,8 +376,6 @@ export const LOCALNET_CONFIG: NetworkConfig = {
     "2x2": "6fffc4962028d0ac69f4d7877badc9f5adea4b83e6224ebb8db22657e847e7b8",
   },
 
-  // Pool group key (POC — same as devnet for local dev) — legacy fallback.
-  groupPubKey: "79be667ef9dcbbac55a06295ce870b07029bfcdb2dce28d959f2815b16f81798",
   // Ika dWallet x-only pubkey — populated by ./scripts/sync-env.sh from localnet-state.json.
   ikaDwalletXOnlyPubkey:
     "0000000000000000000000000000000000000000000000000000000000000000",
@@ -571,7 +559,6 @@ export async function initConfig(overrides?: {
   utxopiaProgramId?: string;
   zkbtcMint?: string;
   solanaRpcUrl?: string;
-  groupPubKey?: string;
   ikaDwalletXOnlyPubkey?: string;
   depositMode?: "sweep" | "direct" | "direct_vault" | "ika_direct";
 }): Promise<NetworkConfig> {
@@ -678,12 +665,7 @@ export async function initConfig(overrides?: {
     config.poolVault = poolVault;
   }
 
-  // Apply groupPubKey override (legacy FROST)
-  if (overrides?.groupPubKey) {
-    config.groupPubKey = overrides.groupPubKey;
-  }
-
-  // Apply Ika dWallet x-only pubkey override (preferred for v2 pools)
+  // Apply Ika dWallet x-only pubkey override (sole Taproot custody key)
   if (overrides?.ikaDwalletXOnlyPubkey) {
     config.ikaDwalletXOnlyPubkey = overrides.ikaDwalletXOnlyPubkey;
   }

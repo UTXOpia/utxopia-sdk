@@ -11,7 +11,7 @@
  * import { createNonInteractiveDeposit, generateJoinSplitProof, buildTransactInstruction } from '@utxopia/sdk';
  *
  * // 1. DEPOSIT: Generate BTC address + compact OP_RETURN payload.
- * const deposit = await createNonInteractiveDeposit(meta, groupPubKey, 'testnet', undefined, opReturnContext);
+ * const deposit = await createNonInteractiveDeposit(meta, custodyInternalKey, 'testnet', undefined, opReturnContext);
  * console.log('Send BTC to:', deposit.btcAddress);
  *
  * // 2. TRANSACT: JoinSplit proof for private transfer
@@ -600,6 +600,13 @@ export {
   // Verify instruction data builders
   buildVerifyTransactionInstructionData,
   buildCompleteDepositInstructionData,
+  // Pool config (disc 2) builder + parser
+  buildSetPoolConfigInstructionData,
+  parsePoolConfig,
+  type ParsedPoolConfig,
+  POOL_CONFIG_DISCRIMINATOR,
+  POOL_CONFIG_LEN,
+  POOL_SCRIPT_MAX_LEN,
   // Redemption PDA helper
   deriveRedemptionRequestPDA as deriveRedemptionRequestPDAFromInstruction,
   type Instruction,
@@ -610,6 +617,29 @@ export {
   type ExecutePoolUpdateOptions,
   type CancelPoolUpdateOptions,
 } from "./instructions";
+
+// ==========================================================================
+// VK Registry (JoinSplit Groth16 on-chain verification keys)
+// ==========================================================================
+
+export {
+  VK_REGISTRY_DISCRIMINATOR,
+  VK_REGISTRY_LEN,
+  MAX_IC_POINTS,
+  MAX_SAFE_JOINSPLIT_SIZE,
+  INIT_VK_REGISTRY_DISCRIMINATOR,
+  UPDATE_VK_REGISTRY_DISCRIMINATOR,
+  joinSplitNumPublicInputs,
+  computeVkHash,
+  vkeyJsonToVkMaterial,
+  buildVkRegistryData,
+  parseVkRegistry,
+  assertVkRegistryForShape,
+  isVkRegistryReady,
+  type JoinSplitVkMaterial,
+  type SnarkjsVkeyJson,
+  type ParsedVkRegistry,
+} from "./vk-registry";
 
 // ==========================================================================
 // ChadBuffer Relay
