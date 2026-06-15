@@ -37,6 +37,9 @@ export {
   x25519Ecdh,
   ed25519GenerateKeyPair,
   ed25519PubToX25519,
+  ed25519PrivToX25519,
+  x25519PubFromPriv,
+  x25519EcdhRaw,
   encryptAmountEd25519,
   decryptAmountEd25519,
   // Low-level crypto (needed by E2E test scripts + contract deploy scripts)
@@ -113,6 +116,14 @@ export {
   type AuditScanSummary,
   type OnChainSenderMemo,
 } from "./auditor";
+
+// Auditor ciphertext (Method-Y permissioned pool)
+export {
+  encryptAuditorCiphertext,
+  decryptAuditorCiphertext,
+  AUDITOR_CIPHERTEXT_BYTES,
+  type AuditorNotePlain,
+} from "./auditor-ciphertext";
 
 // Sender memo channel (Phase 2)
 export {

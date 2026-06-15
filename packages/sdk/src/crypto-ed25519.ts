@@ -83,6 +83,35 @@ export function x25519Ecdh(privKey: Uint8Array, pubKey: Uint8Array): Uint8Array 
   return x25519.getSharedSecret(x25519Priv, x25519Pub);
 }
 
+/**
+ * Convert an Ed25519 private key to its X25519 (Montgomery) scalar.
+ *
+ * Uses the same clamped-scalar derivation as `x25519Ecdh` internally.
+ * The returned 32 bytes are a valid X25519 private key suitable for
+ * `x25519.getSharedSecret` or `x25519.getPublicKey`.
+ */
+export function ed25519PrivToX25519(edPriv: Uint8Array): Uint8Array {
+  return ed25519.utils.toMontgomerySecret(edPriv);
+}
+
+/**
+ * Derive an X25519 public key from a raw X25519 private scalar.
+ */
+export function x25519PubFromPriv(x25519Priv: Uint8Array): Uint8Array {
+  return x25519.getPublicKey(x25519Priv);
+}
+
+/**
+ * Perform X25519 ECDH with raw X25519 keys (no Ed25519 conversion).
+ *
+ * @param x25519Priv - 32-byte X25519 private scalar (from `ed25519PrivToX25519` or `x25519PubFromPriv`)
+ * @param x25519Pub  - 32-byte X25519 public key (u-coordinate)
+ * @returns 32-byte shared secret
+ */
+export function x25519EcdhRaw(x25519Priv: Uint8Array, x25519Pub: Uint8Array): Uint8Array {
+  return x25519.getSharedSecret(x25519Priv, x25519Pub);
+}
+
 // =============================================================================
 // Amount Encryption/Decryption
 // =============================================================================
