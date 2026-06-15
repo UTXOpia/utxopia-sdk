@@ -21,6 +21,8 @@ export const EVENT_ANNOUNCEMENTS_BATCH = 0x0c;
 /** Phase 2: sender memo (XChaCha20-Poly1305 AEAD payload). */
 export const EVENT_SENDER_MEMO = 0x12;
 export const EVENT_BTC_ORIGIN_ATTESTATION = 0x15;
+/** Method-Y: auditor ciphertext emitted alongside every shielded deposit into a permissioned pool. */
+export const EVENT_AUDITOR_CIPHERTEXT = 0x16;
 
 /** Parsed nullifier spent event */
 export interface NullifierSpentEvent {
@@ -74,11 +76,26 @@ export interface BtcOriginAttestationEvent {
   amountSats: bigint;
 }
 
+/**
+ * Auditor ciphertext event (Method-Y permissioned pools).
+ *
+ * Emitted alongside every shielded deposit into a permissioned pool so that
+ * a designated auditor can decrypt note viewing data off-chain.
+ */
+export interface AuditorCiphertextEvent {
+  type: "auditor_ciphertext";
+  /** 32-byte Poseidon commitment of the shielded note. */
+  commitment: Uint8Array;
+  /** 112-byte encrypted blob: eph_pub(32) || nonce(24) || ciphertextWithTag(56). */
+  blob: Uint8Array;
+}
+
 export type ProgramEvent =
   | NullifierSpentEvent
   | StealthAnnouncementEvent
   | SenderMemoEvent
-  | BtcOriginAttestationEvent;
+  | BtcOriginAttestationEvent
+  | AuditorCiphertextEvent;
 
 /**
  * Parse a nullifier spent event from decoded sol_log_data segments.
@@ -280,6 +297,53 @@ function parseAnnouncementsBatch(data: Uint8Array): StealthAnnouncementEvent[] {
   return events;
 }
 
+/**
+ * Parse an auditor ciphertext event (Method-Y) from decoded sol_log_data segments.
+ * Layout: disc(1) + commitment(32) + blob(112)
+ */
+export function parseAuditorCiphertextEvent(segments: Uint8Array[]): AuditorCiphertextEvent | null {
+  if (segments.length < 3) return null;
+  if (segments[0].length !== 1 || segments[0][0] !== EVENT_AUDITOR_CIPHERTEXT) return null;
+
+  const commitment = segments[1];
+  if (commitment.length !== 32) return null;
+
+  const blob = segments[2];
+  if (blob.length !== 112) return null;
+
+  return { type: "auditor_ciphertext", commitment, blob };
+}
+
+/**
+ * Normalise an auditor-ciphertext Sui event JSON into an `AuditorCiphertextEvent`.
+ *
+ * Sui `vector<u8>` fields are deserialized as `number[]` in event JSON.
+ * The field name is `auditor_ciphertext` (112-element array) and `commitment`
+ * (32-element array, also present on `BtcDepositVerified` / `StealthAnnounced`).
+ *
+ * @param fields - Raw Sui event fields object.
+ * @returns Parsed event, or null on any validation failure.
+ */
+export function auditorCiphertextFromSuiEventFields(fields: {
+  commitment?: number[] | Uint8Array | null;
+  note?: number[] | Uint8Array | null;
+  auditor_ciphertext: number[] | Uint8Array;
+}): AuditorCiphertextEvent | null {
+  const rawBlob = fields.auditor_ciphertext;
+  if (!rawBlob) return null;
+  const blob = rawBlob instanceof Uint8Array ? rawBlob : new Uint8Array(rawBlob);
+  if (blob.length !== 112) return null;
+
+  // Accept either `commitment` or `note` as the 32-byte commitment field.
+  const rawCommitment = fields.commitment ?? fields.note ?? null;
+  if (!rawCommitment) return null;
+  const commitment =
+    rawCommitment instanceof Uint8Array ? rawCommitment : new Uint8Array(rawCommitment);
+  if (commitment.length !== 32) return null;
+
+  return { type: "auditor_ciphertext", commitment, blob };
+}
+
 function decodeBase64(b64: string): Uint8Array {
   const binary = atob(b64);
   const bytes = new Uint8Array(binary.length);
@@ -338,6 +402,9 @@ export function parseProgramEvents(logs: string[], programId?: string): ProgramE
       if (event) events.push(event);
     } else if (disc === EVENT_BTC_ORIGIN_ATTESTATION) {
       const event = parseBtcOriginAttestationEvent(segments);
+      if (event) events.push(event);
+    } else if (disc === EVENT_AUDITOR_CIPHERTEXT) {
+      const event = parseAuditorCiphertextEvent(segments);
       if (event) events.push(event);
     }
   }
