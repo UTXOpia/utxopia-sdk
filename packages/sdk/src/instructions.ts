@@ -67,6 +67,21 @@ const INSTRUCTION = {
   UPDATE_ASSOCIATION_ROOT: 21,
   ATTEST_POI: 22,
   APPROVE_REDEMPTION_SIGNING: 27,
+  // Auditor-only setters (28-29) — utxopia program, permissioned pools
+  SET_AUDITOR_FROZEN: 28,
+  SET_AUDITOR_VIEWING_PUBKEY: 29,
+} as const;
+
+/**
+ * Discriminants for permissioned-pool instructions (utxopia program only).
+ * Disc 21, 22, 23 reuse the same numeric slots as the PoI instruction set
+ * in a different program; the utxopia program assigns them to permissioned
+ * pool ops — values must match programs/utxopia/src/lib.rs exactly.
+ */
+const PERMISSIONED_DISC = {
+  INITIALIZE_PERMISSIONED: 21,
+  COMPLETE_DEPOSIT_PERMISSIONED: 22,
+  SHIELD_PERMISSIONED: 23,
 } as const;
 
 /** Export instruction discriminators for consumers */
@@ -1537,3 +1552,492 @@ export function bytes32ToBigint(bytes: Uint8Array): bigint {
 // hexToBytes / bytesToHex live in ./crypto (single source); re-exported here
 // to preserve this module's public surface.
 export { hexToBytes, bytesToHex } from "./crypto";
+
+// =============================================================================
+// Permissioned Pool Builders
+// =============================================================================
+
+// ---------------------------------------------------------------------------
+// initializePermissioned (disc=21)
+// ---------------------------------------------------------------------------
+
+/** initializePermissioned instruction options */
+export interface InitializePermissionedOptions {
+  /** PDA bump for pool state */
+  poolBump: number;
+  /** PDA bump for commitment tree */
+  treeBump: number;
+  /** Deposit fee in basis points (u16 LE) */
+  depositFeeBps: number;
+  /** Withdrawal fee in basis points (u16 LE) */
+  withdrawalFeeBps: number;
+  /** Auditor's Solana pubkey (32 bytes) */
+  auditor: Uint8Array;
+  /** Auditor's viewing public key (32 bytes) */
+  auditorViewingPubkey: Uint8Array;
+  /** Account addresses — same layout as initialize (disc=0) */
+  accounts: {
+    /** 0. pool_state (writable) */
+    poolState: Address;
+    /** 1. commitment_tree (writable) */
+    commitmentTree: Address;
+    /** 2. zkbtc_mint (writable) */
+    zkbtcMint: Address;
+    /** 3. pool_vault (writable) */
+    poolVault: Address;
+    /** 4. deposit_vault (writable) */
+    depositVault: Address;
+    /** 5. authority (signer, writable — pays for storage) */
+    authority: Address;
+    /** 6. system_program (readonly) */
+    systemProgram: Address;
+  };
+}
+
+/**
+ * Build initializePermissioned instruction data (disc=21).
+ *
+ * Layout (after disc byte — same as initialize plus two 32-byte fields):
+ *   pool_bump(1) + tree_bump(1) + deposit_fee_bps(2 LE) + withdrawal_fee_bps(2 LE)
+ *   + auditor(32) + auditor_viewing_pubkey(32)
+ *   = 70 bytes of payload; 71 bytes total with disc.
+ */
+export function buildInitializePermissionedInstructionData(options: {
+  poolBump: number;
+  treeBump: number;
+  depositFeeBps: number;
+  withdrawalFeeBps: number;
+  auditor: Uint8Array;
+  auditorViewingPubkey: Uint8Array;
+}): Uint8Array {
+  if (options.auditor.length !== 32) {
+    throw new Error(`auditor must be 32 bytes, got ${options.auditor.length}`);
+  }
+  if (options.auditorViewingPubkey.length !== 32) {
+    throw new Error(`auditorViewingPubkey must be 32 bytes, got ${options.auditorViewingPubkey.length}`);
+  }
+
+  // disc(1) + pool_bump(1) + tree_bump(1) + deposit_fee_bps(2) + withdrawal_fee_bps(2) + auditor(32) + auditor_viewing_pubkey(32) = 71
+  const data = new Uint8Array(71);
+  const view = new DataView(data.buffer);
+  let offset = 0;
+
+  data[offset++] = PERMISSIONED_DISC.INITIALIZE_PERMISSIONED; // disc = 21
+  data[offset++] = options.poolBump;
+  data[offset++] = options.treeBump;
+  view.setUint16(offset, options.depositFeeBps, true); offset += 2;
+  view.setUint16(offset, options.withdrawalFeeBps, true); offset += 2;
+  data.set(options.auditor, offset); offset += 32;
+  data.set(options.auditorViewingPubkey, offset);
+
+  return data;
+}
+
+/**
+ * Build a complete initializePermissioned instruction (disc=21).
+ *
+ * Initializes a pool in permissioned mode; deposits/shields require auditor co-signing.
+ *
+ * Accounts (identical to initialize, disc=0):
+ * 0. pool_state          (writable)
+ * 1. commitment_tree     (writable)
+ * 2. zkbtc_mint          (writable)
+ * 3. pool_vault          (writable)
+ * 4. deposit_vault       (writable)
+ * 5. authority           (writable signer)
+ * 6. system_program      (readonly)
+ */
+export function buildInitializePermissionedInstruction(
+  options: InitializePermissionedOptions,
+): Instruction {
+  const config = getConfig();
+  const data = buildInitializePermissionedInstructionData({
+    poolBump: options.poolBump,
+    treeBump: options.treeBump,
+    depositFeeBps: options.depositFeeBps,
+    withdrawalFeeBps: options.withdrawalFeeBps,
+    auditor: options.auditor,
+    auditorViewingPubkey: options.auditorViewingPubkey,
+  });
+
+  return {
+    programAddress: config.utxopiaProgramId,
+    accounts: [
+      { address: options.accounts.poolState,      role: AccountRole.WRITABLE },
+      { address: options.accounts.commitmentTree, role: AccountRole.WRITABLE },
+      { address: options.accounts.zkbtcMint,      role: AccountRole.WRITABLE },
+      { address: options.accounts.poolVault,      role: AccountRole.WRITABLE },
+      { address: options.accounts.depositVault,   role: AccountRole.WRITABLE },
+      { address: options.accounts.authority,      role: AccountRole.WRITABLE_SIGNER },
+      { address: options.accounts.systemProgram,  role: AccountRole.READONLY },
+    ],
+    data,
+  };
+}
+
+// ---------------------------------------------------------------------------
+// completeDepositPermissioned (disc=22)
+// ---------------------------------------------------------------------------
+
+/** completeDepositPermissioned instruction options */
+export interface CompleteDepositPermissionedOptions {
+  /** SPV-proven sweep txid (32 bytes, internal byte order) */
+  sweepTxid: Uint8Array;
+  /** Block height containing the verified tx */
+  blockHeight: number;
+  /** Raw sweep tx size in ChadBuffer */
+  sweepTxSize: number;
+  /** Raw deposit tx size in ChadBuffer (0 = direct-to-pool) */
+  depositTxSize: number;
+  /** Deposit txid (32 bytes, internal byte order) */
+  depositTxid: Uint8Array;
+  /**
+   * Auditor ciphertext supplied by the auditor's off-chain helper.
+   * Threaded through to the on-chain event log verbatim; this builder does
+   * not perform any cryptography.
+   */
+  auditorCiphertext: Uint8Array;
+  /** Account addresses — same 15 as complete_deposit PLUS auditor at index 15 */
+  accounts: {
+    /** 0. pool_state (writable) */
+    poolState: Address;
+    /** 1. verified_transaction PDA (readonly) */
+    verifiedTransaction: Address;
+    /** 2. light_client (readonly) */
+    lightClient: Address;
+    /** 3. commitment_tree (writable) */
+    commitmentTree: Address;
+    /** 4. tx_buffer / sweep ChadBuffer (readonly) */
+    txBuffer: Address;
+    /** 5. authority (writable signer) */
+    authority: Address;
+    /** 6. system_program (readonly) */
+    systemProgram: Address;
+    /** 7. zkbtc_mint (writable) */
+    zkbtcMint: Address;
+    /** 8. pool_vault (writable) */
+    poolVault: Address;
+    /** 9. token_program (readonly) */
+    tokenProgram: Address;
+    /** 10. deposit_tx_buffer (readonly) */
+    depositTxBuffer: Address;
+    /** 11. deposit_receipt PDA (writable) */
+    depositReceipt: Address;
+    /** 12. utxo_record PDA (writable) */
+    utxoRecord: Address;
+    /** 13. token_config PDA (writable) */
+    tokenConfig: Address;
+    /** 14. pool_config PDA (readonly) */
+    poolConfig: Address;
+    /** 15. auditor (signer, readonly) — permissioned gate */
+    auditor: Address;
+  };
+}
+
+/**
+ * Build completeDepositPermissioned instruction data (disc=22).
+ *
+ * Layout:
+ *   disc(1) + CompleteDepositData fixed header (80 bytes) + auditorCiphertext (variable)
+ *
+ * The 80-byte header is identical to complete_deposit (disc=11).
+ */
+export function buildCompleteDepositPermissionedInstructionData(options: {
+  sweepTxid: Uint8Array;
+  blockHeight: number;
+  sweepTxSize: number;
+  depositTxSize: number;
+  depositTxid: Uint8Array;
+  auditorCiphertext: Uint8Array;
+}): Uint8Array {
+  // disc(1) + sweep_txid(32) + block_height(8) + sweep_tx_size(4) + deposit_tx_size(4) + deposit_txid(32) + auditorCiphertext(variable)
+  const headerSize = 1 + 32 + 8 + 4 + 4 + 32; // 81 bytes
+  const data = new Uint8Array(headerSize + options.auditorCiphertext.length);
+  const view = new DataView(data.buffer);
+  let offset = 0;
+
+  data[offset++] = PERMISSIONED_DISC.COMPLETE_DEPOSIT_PERMISSIONED; // disc = 22
+  data.set(options.sweepTxid, offset); offset += 32;
+  view.setBigUint64(offset, BigInt(options.blockHeight), true); offset += 8;
+  view.setUint32(offset, options.sweepTxSize, true); offset += 4;
+  view.setUint32(offset, options.depositTxSize, true); offset += 4;
+  data.set(options.depositTxid, offset); offset += 32;
+  if (options.auditorCiphertext.length > 0) {
+    data.set(options.auditorCiphertext, offset);
+  }
+
+  return data;
+}
+
+/**
+ * Build a complete completeDepositPermissioned instruction (disc=22).
+ *
+ * Same accounts as complete_deposit (disc=11), plus an auditor signer
+ * appended at account index 15.
+ *
+ * Accounts:
+ * 0.  pool_state          (writable)
+ * 1.  verified_transaction(readonly)
+ * 2.  light_client        (readonly)
+ * 3.  commitment_tree     (writable)
+ * 4.  tx_buffer           (readonly)
+ * 5.  authority           (writable signer)
+ * 6.  system_program      (readonly)
+ * 7.  zkbtc_mint          (writable)
+ * 8.  pool_vault          (writable)
+ * 9.  token_program       (readonly)
+ * 10. deposit_tx_buffer   (readonly)
+ * 11. deposit_receipt     (writable)
+ * 12. utxo_record         (writable)
+ * 13. token_config        (writable)
+ * 14. pool_config         (readonly)
+ * 15. auditor             (readonly signer) — permissioned gate
+ */
+export function buildCompleteDepositPermissionedInstruction(
+  options: CompleteDepositPermissionedOptions,
+): Instruction {
+  const config = getConfig();
+  const data = buildCompleteDepositPermissionedInstructionData({
+    sweepTxid: options.sweepTxid,
+    blockHeight: options.blockHeight,
+    sweepTxSize: options.sweepTxSize,
+    depositTxSize: options.depositTxSize,
+    depositTxid: options.depositTxid,
+    auditorCiphertext: options.auditorCiphertext,
+  });
+
+  return {
+    programAddress: config.utxopiaProgramId,
+    accounts: [
+      { address: options.accounts.poolState,          role: AccountRole.WRITABLE },
+      { address: options.accounts.verifiedTransaction, role: AccountRole.READONLY },
+      { address: options.accounts.lightClient,         role: AccountRole.READONLY },
+      { address: options.accounts.commitmentTree,      role: AccountRole.WRITABLE },
+      { address: options.accounts.txBuffer,            role: AccountRole.READONLY },
+      { address: options.accounts.authority,           role: AccountRole.WRITABLE_SIGNER },
+      { address: options.accounts.systemProgram,       role: AccountRole.READONLY },
+      { address: options.accounts.zkbtcMint,           role: AccountRole.WRITABLE },
+      { address: options.accounts.poolVault,           role: AccountRole.WRITABLE },
+      { address: options.accounts.tokenProgram,        role: AccountRole.READONLY },
+      { address: options.accounts.depositTxBuffer,     role: AccountRole.READONLY },
+      { address: options.accounts.depositReceipt,      role: AccountRole.WRITABLE },
+      { address: options.accounts.utxoRecord,          role: AccountRole.WRITABLE },
+      { address: options.accounts.tokenConfig,         role: AccountRole.WRITABLE },
+      { address: options.accounts.poolConfig,          role: AccountRole.READONLY },
+      // index 15: auditor signer — permissioned gate
+      { address: options.accounts.auditor,             role: AccountRole.READONLY_SIGNER },
+    ],
+    data,
+  };
+}
+
+// ---------------------------------------------------------------------------
+// shieldPermissioned (disc=23)
+// ---------------------------------------------------------------------------
+
+/** shieldPermissioned instruction options */
+export interface ShieldPermissionedInstructionOptions {
+  /** Amount to shield (in token's smallest unit) */
+  amount: bigint;
+  /** NPK bytes (32) — recipient's note public key */
+  npk: Uint8Array;
+  /** Ephemeral public key (32) — for stealth address derivation */
+  ephemeralPub: Uint8Array;
+  /**
+   * Auditor ciphertext supplied by the auditor's off-chain helper.
+   * Threaded through to the on-chain event log verbatim; this builder does
+   * not perform any cryptography.
+   */
+  auditorCiphertext: Uint8Array;
+  /** Account addresses — same 7 as shield (disc=12) PLUS auditor at index 7 */
+  accounts: {
+    /** 0. user (writable signer) */
+    user: Address;
+    /** 1. user_token_account (writable) */
+    userTokenAccount: Address;
+    /** 2. pool_state (readonly) */
+    poolState: Address;
+    /** 3. token_config (writable) */
+    tokenConfig: Address;
+    /** 4. vault (writable) */
+    vault: Address;
+    /** 5. commitment_tree (writable) */
+    commitmentTree: Address;
+    /** 6. token_program (readonly) */
+    tokenProgram: Address;
+    /** 7. auditor (signer) — permissioned gate */
+    auditor: Address;
+  };
+}
+
+/**
+ * Build shieldPermissioned instruction data (disc=23).
+ *
+ * Layout:
+ *   disc(1) + shield header (72 bytes) + auditorCiphertext (variable)
+ *
+ * The 72-byte header is identical to shield (disc=12):
+ *   amount(8 LE) + npk(32) + ephemeral_pub(32)
+ */
+export function buildShieldPermissionedInstructionData(options: {
+  amount: bigint;
+  npk: Uint8Array;
+  ephemeralPub: Uint8Array;
+  auditorCiphertext: Uint8Array;
+}): Uint8Array {
+  // disc(1) + amount(8) + npk(32) + ephemeral_pub(32) + auditorCiphertext(variable)
+  const headerSize = 1 + 8 + 32 + 32; // 73 bytes
+  const data = new Uint8Array(headerSize + options.auditorCiphertext.length);
+  const view = new DataView(data.buffer);
+  let offset = 0;
+
+  data[offset++] = PERMISSIONED_DISC.SHIELD_PERMISSIONED; // disc = 23
+  view.setBigUint64(offset, options.amount, true); offset += 8;
+  data.set(options.npk.slice(0, 32), offset); offset += 32;
+  data.set(options.ephemeralPub.slice(0, 32), offset); offset += 32;
+  if (options.auditorCiphertext.length > 0) {
+    data.set(options.auditorCiphertext, offset);
+  }
+
+  return data;
+}
+
+/**
+ * Build a complete shieldPermissioned instruction (disc=23).
+ *
+ * Same accounts as shield (disc=12), plus an auditor signer appended at
+ * account index 7.
+ *
+ * Accounts:
+ * 0. user              (writable signer)
+ * 1. user_token_account(writable)
+ * 2. pool_state        (readonly)
+ * 3. token_config      (writable)
+ * 4. vault             (writable)
+ * 5. commitment_tree   (writable)
+ * 6. token_program     (readonly)
+ * 7. auditor           (signer) — permissioned gate
+ */
+export function buildShieldPermissionedInstruction(
+  options: ShieldPermissionedInstructionOptions,
+): Instruction {
+  const config = getConfig();
+  const data = buildShieldPermissionedInstructionData({
+    amount: options.amount,
+    npk: options.npk,
+    ephemeralPub: options.ephemeralPub,
+    auditorCiphertext: options.auditorCiphertext,
+  });
+
+  return {
+    programAddress: config.utxopiaProgramId,
+    accounts: [
+      { address: options.accounts.user,             role: AccountRole.WRITABLE_SIGNER },
+      { address: options.accounts.userTokenAccount, role: AccountRole.WRITABLE },
+      { address: options.accounts.poolState,        role: AccountRole.READONLY },
+      { address: options.accounts.tokenConfig,      role: AccountRole.WRITABLE },
+      { address: options.accounts.vault,            role: AccountRole.WRITABLE },
+      { address: options.accounts.commitmentTree,   role: AccountRole.WRITABLE },
+      { address: options.accounts.tokenProgram,     role: AccountRole.READONLY },
+      // index 7: auditor signer — permissioned gate
+      { address: options.accounts.auditor,          role: AccountRole.READONLY_SIGNER },
+    ],
+    data,
+  };
+}
+
+// ---------------------------------------------------------------------------
+// setAuditorFrozen (disc=28)
+// ---------------------------------------------------------------------------
+
+/** setAuditorFrozen instruction options */
+export interface SetAuditorFrozenOptions {
+  /** true = freeze the auditor role; false = un-freeze */
+  frozen: boolean;
+  accounts: {
+    /** 0. pool_state (writable) */
+    poolState: Address;
+    /** 1. auditor (signer) */
+    auditor: Address;
+  };
+}
+
+/**
+ * Build setAuditorFrozen instruction data (disc=28).
+ *
+ * Layout: disc(1) + frozen(1)  — frozen byte: 0 = not frozen, 1 = frozen.
+ */
+export function buildSetAuditorFrozenInstructionData(frozen: boolean): Uint8Array {
+  return new Uint8Array([INSTRUCTION.SET_AUDITOR_FROZEN, frozen ? 1 : 0]);
+}
+
+/**
+ * Build a complete setAuditorFrozen instruction (disc=28).
+ *
+ * Accounts:
+ * 0. pool_state (writable)
+ * 1. auditor    (signer)
+ */
+export function buildSetAuditorFrozenInstruction(options: SetAuditorFrozenOptions): Instruction {
+  const config = getConfig();
+  return {
+    programAddress: config.utxopiaProgramId,
+    accounts: [
+      { address: options.accounts.poolState, role: AccountRole.WRITABLE },
+      { address: options.accounts.auditor,   role: AccountRole.READONLY_SIGNER },
+    ],
+    data: buildSetAuditorFrozenInstructionData(options.frozen),
+  };
+}
+
+// ---------------------------------------------------------------------------
+// setAuditorViewingPubkey (disc=29)
+// ---------------------------------------------------------------------------
+
+/** setAuditorViewingPubkey instruction options */
+export interface SetAuditorViewingPubkeyOptions {
+  /** New 32-byte viewing pubkey for the auditor */
+  viewingPubkey: Uint8Array;
+  accounts: {
+    /** 0. pool_state (writable) */
+    poolState: Address;
+    /** 1. auditor (signer) */
+    auditor: Address;
+  };
+}
+
+/**
+ * Build setAuditorViewingPubkey instruction data (disc=29).
+ *
+ * Layout: disc(1) + viewing_pubkey(32) = 33 bytes.
+ */
+export function buildSetAuditorViewingPubkeyInstructionData(viewingPubkey: Uint8Array): Uint8Array {
+  if (viewingPubkey.length !== 32) {
+    throw new Error(`viewingPubkey must be 32 bytes, got ${viewingPubkey.length}`);
+  }
+  const data = new Uint8Array(33);
+  data[0] = INSTRUCTION.SET_AUDITOR_VIEWING_PUBKEY;
+  data.set(viewingPubkey, 1);
+  return data;
+}
+
+/**
+ * Build a complete setAuditorViewingPubkey instruction (disc=29).
+ *
+ * Accounts:
+ * 0. pool_state (writable)
+ * 1. auditor    (signer)
+ */
+export function buildSetAuditorViewingPubkeyInstruction(
+  options: SetAuditorViewingPubkeyOptions,
+): Instruction {
+  const config = getConfig();
+  return {
+    programAddress: config.utxopiaProgramId,
+    accounts: [
+      { address: options.accounts.poolState, role: AccountRole.WRITABLE },
+      { address: options.accounts.auditor,   role: AccountRole.READONLY_SIGNER },
+    ],
+    data: buildSetAuditorViewingPubkeyInstructionData(options.viewingPubkey),
+  };
+}

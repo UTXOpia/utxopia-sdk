@@ -846,6 +846,205 @@ export class UTXOpiaSuiAdapter implements UTXOpiaChainAdapter {
     ]);
   }
 
+  /**
+   * Auditor-gated trustless SPV deposit for permissioned pools.
+   *
+   * Composes `btc_light_client::verify_tx_inclusion` and
+   * `btc_deposit::complete_deposit_permissioned` in one PTB.
+   *
+   * The `AuditorCap` is an **owned** object transferred to the auditor's
+   * address; it is referenced via `tx.object(auditorCapId)` (not a shared-object
+   * ref) so the auditor's wallet can provide it as a regular object argument.
+   *
+   * @param auditorCapId - Object ID of the auditor's `AuditorCap` owned object.
+   * @param auditorCiphertext - Raw bytes of the auditor ciphertext produced by
+   *   the auditor's off-chain helper. Threaded through to the on-chain event
+   *   log verbatim; no cryptography is performed here.
+   */
+  async buildCompleteDepositPermissioned(input: {
+    /** Hash of the (canonical, sufficiently confirmed) block containing the sweep tx. */
+    blockHash: Uint8Array;
+    /** Internal-byte-order txid of the SPV-proven sweep transaction. */
+    sweepTxid: Uint8Array;
+    /** Index of the sweep tx within the block. */
+    txIndex: number;
+    /** Merkle branch from the sweep tx up to the block's merkle root. */
+    merkleSiblings: Uint8Array[];
+    /** Path bits for the merkle branch (bit i = side at level i). */
+    pathBits: bigint | number;
+    /** Raw bytes of the SPV-proven sweep transaction. */
+    sweepRawTx: Uint8Array;
+    /** Raw bytes of the original deposit tx carrying the OP_RETURN; omit when directToPool. */
+    depositRawTx?: Uint8Array;
+    /** True when the deposit paid the pool directly (sweep tx IS the deposit tx). */
+    directToPool: boolean;
+    /** Object ID of the auditor's AuditorCap (owned object). */
+    auditorCapId: string;
+    /**
+     * Auditor ciphertext produced by the auditor's off-chain helper.
+     * Passed as `vector<u8>` to the Move entry point. No cryptography
+     * is performed by this builder.
+     */
+    auditorCiphertext: Uint8Array;
+  }): Promise<SuiUnsignedTransaction> {
+    if (!this.config.btcDepositRegistryObjectId) {
+      throw new Error("Sui BTC deposit registry object ID is required to build permissioned BTC deposit PTBs");
+    }
+    if (!this.config.utxoSetObjectId) {
+      throw new Error("Sui UTXO set object ID is required to build permissioned BTC deposit PTBs");
+    }
+    if (!this.config.lightClientObjectId) {
+      throw new Error("Sui BTC light client object ID is required to build permissioned BTC deposit PTBs");
+    }
+    if (!this.config.commitmentTreeObjectId) {
+      throw new Error("Sui commitment tree object ID is required to build permissioned BTC deposit PTBs");
+    }
+
+    const tx = new Transaction();
+
+    // Step 1: SPV inclusion proof (same as the public path)
+    const inclusion = tx.moveCall({
+      target: `${this.config.packageId}::btc_light_client::verify_tx_inclusion`,
+      arguments: [
+        this.sharedObject(tx, this.config.lightClientObjectId, this.config.lightClientInitialSharedVersion, false),
+        tx.pure.vector("u8", input.blockHash),
+        tx.pure.vector("u8", input.sweepTxid),
+        tx.pure.u32(input.txIndex),
+        tx.pure("vector<vector<u8>>", input.merkleSiblings.map((bytes) => Array.from(bytes))),
+        tx.pure.u64(input.pathBits.toString()),
+      ],
+    });
+
+    // Step 2: Auditor-gated deposit.
+    // AuditorCap is an owned object — use tx.object() so the PTB builder
+    // resolves it from the sender's inventory (no initialSharedVersion needed).
+    tx.moveCall({
+      target: `${this.config.packageId}::btc_deposit::complete_deposit_permissioned`,
+      arguments: [
+        // auditor_cap: &AuditorCap — first arg per Move signature
+        tx.object(input.auditorCapId),
+        this.sharedObject(tx, this.config.poolObjectId, this.config.poolInitialSharedVersion, true),
+        this.sharedObject(
+          tx,
+          this.config.btcDepositRegistryObjectId,
+          this.config.btcDepositRegistryInitialSharedVersion,
+          true,
+        ),
+        this.sharedObject(tx, this.config.utxoSetObjectId, this.config.utxoSetInitialSharedVersion, true),
+        this.sharedObject(
+          tx,
+          this.config.commitmentTreeObjectId,
+          this.config.commitmentTreeInitialSharedVersion,
+          true,
+        ),
+        inclusion,
+        tx.pure.vector("u8", input.sweepRawTx),
+        tx.pure.vector("u8", input.depositRawTx ?? new Uint8Array()),
+        tx.pure.bool(input.directToPool),
+        tx.pure.vector("u8", input.auditorCiphertext),
+      ],
+    });
+
+    return this.buildPtb(tx, "Sui permissioned SPV BTC deposit PTB", [
+      this.config.lightClientObjectId,
+      this.config.poolObjectId,
+      this.config.btcDepositRegistryObjectId,
+      this.config.utxoSetObjectId,
+      this.config.commitmentTreeObjectId,
+      input.auditorCapId,
+    ]);
+  }
+
+  /**
+   * Auditor-gated `Coin<T>` shield for permissioned pools.
+   *
+   * Mirrors {@link buildShieldTokenTransaction} but calls
+   * `token_registry::shield_permissioned<T>` which requires an `AuditorCap`
+   * as the first argument.
+   *
+   * The `AuditorCap` is an **owned** object; it is referenced via
+   * `tx.object(auditorCapId)` (not a shared-object ref).
+   *
+   * @param auditorCapId - Object ID of the auditor's `AuditorCap` owned object.
+   * @param auditorCiphertext - Raw bytes of the auditor ciphertext produced by
+   *   the auditor's off-chain helper. Threaded through verbatim; no
+   *   cryptography is performed here.
+   */
+  async buildShieldPermissioned(input: {
+    coinType: string;
+    /**
+     * Funding coin the exact amount is split from. A full object ref builds the PTB
+     * fully offline; pass only `objectId` to defer version/digest resolution to a
+     * client-backed `build`.
+     */
+    fundingCoin: { objectId: string; version?: number | string; digest?: string };
+    amount: bigint | number;
+    /** Note public key (32-byte big-endian field element). */
+    npk: Uint8Array;
+    /** Ephemeral pubkey for the stealth announcement. */
+    ephemeralPub: Uint8Array;
+    /** Object ID of the auditor's AuditorCap (owned object). */
+    auditorCapId: string;
+    /**
+     * Auditor ciphertext produced by the auditor's off-chain helper.
+     * Passed as `vector<u8>` to the Move entry point. No cryptography
+     * is performed by this builder.
+     */
+    auditorCiphertext: Uint8Array;
+  }): Promise<SuiUnsignedTransaction> {
+    if (!this.config.tokenRegistryObjectId) {
+      throw new Error("Sui token registry object ID is required to build permissioned shield PTBs");
+    }
+    if (!this.config.commitmentTreeObjectId) {
+      throw new Error("Sui commitment tree object ID is required to build permissioned shield PTBs");
+    }
+
+    const tx = new Transaction();
+    const fundingCoin = input.fundingCoin.version !== undefined && input.fundingCoin.digest !== undefined
+      ? tx.objectRef({
+          objectId: input.fundingCoin.objectId,
+          version: input.fundingCoin.version,
+          digest: input.fundingCoin.digest,
+        })
+      : tx.object(input.fundingCoin.objectId);
+    const [shielded] = tx.splitCoins(fundingCoin, [tx.pure.u64(input.amount.toString())]);
+
+    tx.moveCall({
+      target: `${this.config.packageId}::token_registry::shield_permissioned`,
+      typeArguments: [input.coinType],
+      arguments: [
+        // auditor_cap: &AuditorCap — first arg per Move signature
+        tx.object(input.auditorCapId),
+        this.sharedObject(tx, this.config.poolObjectId, this.config.poolInitialSharedVersion, false),
+        this.sharedObject(
+          tx,
+          this.config.tokenRegistryObjectId,
+          this.config.tokenRegistryInitialSharedVersion,
+          true,
+        ),
+        this.sharedObject(
+          tx,
+          this.config.commitmentTreeObjectId,
+          this.config.commitmentTreeInitialSharedVersion,
+          true,
+        ),
+        tx.pure.vector("u8", input.npk),
+        tx.pure.vector("u8", input.ephemeralPub),
+        shielded,
+        tx.pure.vector("u8", input.auditorCiphertext),
+        tx.object.clock(),
+      ],
+    });
+
+    return this.buildPtb(tx, "Sui permissioned shield PTB", [
+      this.config.poolObjectId,
+      this.config.tokenRegistryObjectId,
+      this.config.commitmentTreeObjectId,
+      input.fundingCoin.objectId,
+      input.auditorCapId,
+    ]);
+  }
+
   async submitTransaction(tx: SignedTransaction): Promise<TransactionResult> {
     if (tx.chain !== "sui" || tx.kind !== "sui-programmable-transaction-block") {
       throw new Error(`UTXOpiaSuiAdapter cannot submit ${tx.chain}/${tx.kind}`);
