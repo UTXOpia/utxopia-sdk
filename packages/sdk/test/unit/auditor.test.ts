@@ -16,6 +16,8 @@ import {
   ANNOUNCEMENT_TYPE_DEPOSIT,
   createStealthMetaAddress,
   encryptSenderMemo,
+  encryptAuditorCiphertext,
+  generateAuditorViewingKeypair,
   type AuditScanAnnouncement,
   type OnChainSenderMemo,
 } from "../../src/index";
@@ -478,6 +480,112 @@ describe("auditRecordsToCsv", () => {
     const lines = csv.trim().split("\n");
     expect(lines).toHaveLength(2);
     expect(lines[1]).toContain("42,2023-11-14T22:13:20.000Z,7,IN,deposit,2053272675,12345,");
+  });
+});
+
+describe("auditScan — auditor ciphertexts (Method-Y)", () => {
+  it("produces AUDITOR_VISIBLE records for two notes encrypted to the auditor", async () => {
+    const auditor = generateAuditorViewingKeypair();
+    const sender = deriveKeysFromSeed(new Uint8Array(32).fill(0x42));
+    const delegated = createDelegatedViewKey(sender, ViewPermissions.FULL);
+
+    const commitment1 = new Uint8Array(32).fill(0x11);
+    const commitment2 = new Uint8Array(32).fill(0x22);
+    const blob1 = encryptAuditorCiphertext(
+      auditor.pubKey,
+      { tokenId: ZKBTC_TOKEN_ID, amount: 100_000n },
+      commitment1,
+    );
+    const blob2 = encryptAuditorCiphertext(
+      auditor.pubKey,
+      { tokenId: ZKBTC_TOKEN_ID, amount: 200_000n },
+      commitment2,
+    );
+
+    const result = await auditScan(delegated, [], {
+      tokenIds: [ZKBTC_TOKEN_ID],
+      auditorCiphertexts: [
+        { commitment: commitment1, blob: blob1, slot: 100, blockTime: 1_700_000_000 },
+        { commitment: commitment2, blob: blob2, slot: 200, blockTime: 1_700_001_000 },
+      ],
+      auditorViewingPrivKey: auditor.privKey,
+    });
+
+    expect(result.records).toHaveLength(2);
+    const amounts = result.records.map((r) => r.amount).sort((a, b) => (a < b ? -1 : 1));
+    expect(amounts).toEqual([100_000n, 200_000n]);
+    expect(result.records.every((r) => r.direction === "AUDITOR_VISIBLE")).toBe(true);
+    expect(result.records.every((r) => r.tokenId === ZKBTC_TOKEN_ID)).toBe(true);
+    expect(result.records[0].slot).toBe(100);
+    expect(result.records[1].slot).toBe(200);
+  });
+
+  it("yields zero AUDITOR_VISIBLE records when a different (wrong) auditor key is used", async () => {
+    const auditor = generateAuditorViewingKeypair();
+    const wrongAuditor = generateAuditorViewingKeypair();
+    const sender = deriveKeysFromSeed(new Uint8Array(32).fill(0x42));
+    const delegated = createDelegatedViewKey(sender, ViewPermissions.FULL);
+
+    const commitment = new Uint8Array(32).fill(0x33);
+    const blob = encryptAuditorCiphertext(
+      auditor.pubKey,
+      { tokenId: ZKBTC_TOKEN_ID, amount: 50_000n },
+      commitment,
+    );
+
+    const result = await auditScan(delegated, [], {
+      tokenIds: [ZKBTC_TOKEN_ID],
+      auditorCiphertexts: [{ commitment, blob, slot: 100 }],
+      auditorViewingPrivKey: wrongAuditor.privKey,
+    });
+
+    expect(result.records.filter((r) => r.direction === "AUDITOR_VISIBLE")).toHaveLength(0);
+  });
+
+  it("skips auditor ciphertexts outside the slot range", async () => {
+    const auditor = generateAuditorViewingKeypair();
+    const sender = deriveKeysFromSeed(new Uint8Array(32).fill(0x42));
+    const delegated = createDelegatedViewKey(sender, ViewPermissions.FULL, {
+      fromSlot: 200,
+      toSlot: 300,
+    });
+
+    const commitment = new Uint8Array(32).fill(0x44);
+    const blob = encryptAuditorCiphertext(
+      auditor.pubKey,
+      { tokenId: ZKBTC_TOKEN_ID, amount: 1_000n },
+      commitment,
+    );
+
+    const result = await auditScan(delegated, [], {
+      tokenIds: [ZKBTC_TOKEN_ID],
+      auditorCiphertexts: [{ commitment, blob, slot: 100 }],
+      auditorViewingPrivKey: auditor.privKey,
+    });
+
+    expect(result.records.filter((r) => r.direction === "AUDITOR_VISIBLE")).toHaveLength(0);
+    expect(result.outOfRangeSkipped).toBe(1);
+  });
+
+  it("CSV labels AUDITOR_VISIBLE rows as auditor-ciphertext", async () => {
+    const auditor = generateAuditorViewingKeypair();
+    const sender = deriveKeysFromSeed(new Uint8Array(32).fill(0x42));
+    const delegated = createDelegatedViewKey(sender, ViewPermissions.FULL);
+
+    const commitment = new Uint8Array(32).fill(0x55);
+    const blob = encryptAuditorCiphertext(
+      auditor.pubKey,
+      { tokenId: ZKBTC_TOKEN_ID, amount: 1n },
+      commitment,
+    );
+
+    const result = await auditScan(delegated, [], {
+      tokenIds: [ZKBTC_TOKEN_ID],
+      auditorCiphertexts: [{ commitment, blob }],
+      auditorViewingPrivKey: auditor.privKey,
+    });
+    const csv = auditRecordsToCsv(result.records);
+    expect(csv).toContain(",AUDITOR_VISIBLE,auditor-ciphertext,");
   });
 });
 

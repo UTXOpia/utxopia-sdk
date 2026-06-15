@@ -30,10 +30,11 @@ import {
   type DelegatedViewKey,
 } from "./keys";
 import { decryptSenderMemo, type SenderMemoCiphertext } from "./sender-memo";
+import { decryptAuditorCiphertext } from "./auditor-ciphertext";
 export type { SenderMemoCiphertext };
 
 /** Direction of a record relative to the audited user. */
-export type AuditDirection = "IN" | "OUT" | "SELF" | "UNKNOWN";
+export type AuditDirection = "IN" | "OUT" | "SELF" | "UNKNOWN" | "AUDITOR_VISIBLE";
 
 /** A single matched announcement, ready for report rendering. */
 export interface AuditRecord {
@@ -58,6 +59,10 @@ export interface AuditScanOptions {
   now?: () => number;
   /** Sender-memo events (Phase 2). When supplied, OUT records will be produced. */
   senderMemos?: ReadonlyArray<OnChainSenderMemo>;
+  /** Auditor ciphertext events (Method-Y). When supplied, AUDITOR_VISIBLE records will be produced. */
+  auditorCiphertexts?: ReadonlyArray<{ commitment: Uint8Array; blob: Uint8Array; slot?: number; blockTime?: number }>;
+  /** Auditor viewing private key (32-byte Ed25519). Required to decrypt auditorCiphertexts. */
+  auditorViewingPrivKey?: Uint8Array;
 }
 
 /**
@@ -248,6 +253,46 @@ export async function auditScan(
     }
   }
 
+  // Auditor ciphertexts (Method-Y): produce AUDITOR_VISIBLE records.
+  if (
+    options.auditorViewingPrivKey &&
+    options.auditorCiphertexts &&
+    options.auditorCiphertexts.length > 0
+  ) {
+    for (const entry of options.auditorCiphertexts) {
+      if (effectiveFromSlot != null || effectiveToSlot != null) {
+        if (entry.slot == null) {
+          unscopedSkipped++;
+          continue;
+        }
+        if (!isSlotInDelegatedRange(keyForRange, entry.slot)) {
+          outOfRangeSkipped++;
+          continue;
+        }
+      }
+      const plain = decryptAuditorCiphertext(
+        options.auditorViewingPrivKey,
+        entry.blob,
+        entry.commitment,
+      );
+      if (!plain) continue;
+      if (plain.amount <= 0n) continue;
+      if (!options.tokenIds.some((t) => t === plain.tokenId)) continue;
+
+      records.push({
+        slot: entry.slot ?? 0,
+        blockTime: entry.blockTime ?? 0,
+        leafIndex: -1,
+        direction: "AUDITOR_VISIBLE",
+        announcementType: -1,
+        tokenId: plain.tokenId,
+        amount: plain.amount,
+        commitmentHex: bytesToHex(entry.commitment),
+        ephemeralPubHex: "",
+      });
+    }
+  }
+
   return {
     records,
     outOfRangeSkipped,
@@ -271,9 +316,11 @@ export function auditRecordsToCsv(records: ReadonlyArray<AuditRecord>): string {
     const typeLabel =
       r.direction === "OUT"
         ? "sender-memo"
-        : r.announcementType === ANNOUNCEMENT_TYPE_DEPOSIT
-          ? "deposit"
-          : "transfer";
+        : r.direction === "AUDITOR_VISIBLE"
+          ? "auditor-ciphertext"
+          : r.announcementType === ANNOUNCEMENT_TYPE_DEPOSIT
+            ? "deposit"
+            : "transfer";
     return [
       r.slot,
       ts,
