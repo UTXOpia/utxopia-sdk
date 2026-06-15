@@ -111,6 +111,25 @@ function intersectUpper(a?: number, b?: number): number | undefined {
   return Math.min(a, b);
 }
 
+function buildAuditorVisibleRecord(
+  plain: { tokenId: bigint; amount: bigint },
+  commitment: Uint8Array,
+  slot: number,
+  blockTime: number,
+): AuditRecord {
+  return {
+    slot,
+    blockTime,
+    leafIndex: -1,
+    direction: "AUDITOR_VISIBLE",
+    announcementType: -1,
+    tokenId: plain.tokenId,
+    amount: plain.amount,
+    commitmentHex: bytesToHex(commitment),
+    ephemeralPubHex: "",
+  };
+}
+
 /**
  * Scan announcements with a delegated viewing key and produce {@link AuditRecord}s.
  *
@@ -279,17 +298,7 @@ export async function auditScan(
       if (plain.amount <= 0n) continue;
       if (!options.tokenIds.some((t) => t === plain.tokenId)) continue;
 
-      records.push({
-        slot: entry.slot ?? 0,
-        blockTime: entry.blockTime ?? 0,
-        leafIndex: -1,
-        direction: "AUDITOR_VISIBLE",
-        announcementType: -1,
-        tokenId: plain.tokenId,
-        amount: plain.amount,
-        commitmentHex: bytesToHex(entry.commitment),
-        ephemeralPubHex: "",
-      });
+      records.push(buildAuditorVisibleRecord(plain, entry.commitment, entry.slot ?? 0, entry.blockTime ?? 0));
     }
   }
 
@@ -298,6 +307,69 @@ export async function auditScan(
     outOfRangeSkipped,
     unscopedSkipped,
     notForViewerSkipped: Math.max(0, notForViewerSkipped),
+    effectiveFromSlot,
+    effectiveToSlot,
+  };
+}
+
+/**
+ * Scan auditor ciphertexts (Method-Y) using only an auditor viewing private key.
+ *
+ * Unlike {@link auditScan}, this function does NOT require a full {@link DelegatedViewKey}
+ * with spendingPubKey/nullifyingKey — it only needs the auditor's 32-byte Ed25519
+ * viewing private key. This is the primary entry point for Method-Y auditor use cases.
+ */
+export async function auditScanCiphertexts(
+  auditorViewingPrivKey: Uint8Array,
+  ciphertexts: ReadonlyArray<{ commitment: Uint8Array; blob: Uint8Array; slot?: number; blockTime?: number }>,
+  options?: { tokenIds?: bigint[]; fromSlot?: number; toSlot?: number },
+): Promise<AuditScanSummary> {
+  const records: AuditRecord[] = [];
+  let outOfRangeSkipped = 0;
+  let unscopedSkipped = 0;
+  let notForViewerSkipped = 0;
+
+  const effectiveFromSlot = options?.fromSlot;
+  const effectiveToSlot = options?.toSlot;
+
+  for (const entry of ciphertexts) {
+    if (effectiveFromSlot != null || effectiveToSlot != null) {
+      if (entry.slot == null) {
+        unscopedSkipped++;
+        continue;
+      }
+      if (effectiveFromSlot != null && entry.slot < effectiveFromSlot) {
+        outOfRangeSkipped++;
+        continue;
+      }
+      if (effectiveToSlot != null && entry.slot > effectiveToSlot) {
+        outOfRangeSkipped++;
+        continue;
+      }
+    }
+
+    const plain = decryptAuditorCiphertext(auditorViewingPrivKey, entry.blob, entry.commitment);
+    if (!plain) {
+      notForViewerSkipped++;
+      continue;
+    }
+    if (plain.amount <= 0n) {
+      notForViewerSkipped++;
+      continue;
+    }
+    if (options?.tokenIds && options.tokenIds.length > 0 && !options.tokenIds.some((t) => t === plain.tokenId)) {
+      notForViewerSkipped++;
+      continue;
+    }
+
+    records.push(buildAuditorVisibleRecord(plain, entry.commitment, entry.slot ?? 0, entry.blockTime ?? 0));
+  }
+
+  return {
+    records,
+    outOfRangeSkipped,
+    unscopedSkipped,
+    notForViewerSkipped,
     effectiveFromSlot,
     effectiveToSlot,
   };

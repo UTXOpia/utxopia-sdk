@@ -108,6 +108,7 @@ export {
 } from "./keys";
 export {
   auditScan,
+  auditScanCiphertexts,
   auditRecordsToCsv,
   type AuditDirection,
   type AuditRecord,
