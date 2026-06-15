@@ -121,8 +121,11 @@ export {
 export {
   encryptAuditorCiphertext,
   decryptAuditorCiphertext,
+  buildAuditorCiphertextForNote,
+  resolveAuditorCiphertext,
   AUDITOR_CIPHERTEXT_BYTES,
   type AuditorNotePlain,
+  type AuditorCiphertextInput,
 } from "./auditor-ciphertext";
 export {
   generateAuditorViewingKeypair,

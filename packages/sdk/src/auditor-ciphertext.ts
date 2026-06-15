@@ -105,6 +105,50 @@ export function encryptAuditorCiphertext(
 }
 
 /**
+ * Convenience wrapper: build a 112-byte auditor ciphertext blob from note fields.
+ *
+ * Thin wrapper over {@link encryptAuditorCiphertext} for callers who have the raw
+ * note fields (tokenId, amount, commitment) rather than a pre-packed `AuditorNotePlain`.
+ *
+ * @param input.auditorViewingPubKey - 32-byte Ed25519 public key of the auditor
+ * @param input.tokenId              - token id (field element, fits in 256 bits)
+ * @param input.amount               - note amount (≤ 64 bits)
+ * @param input.commitment           - 32-byte note commitment (binds ciphertext to note)
+ * @returns 112-byte blob: eph_pub(32) || nonce(24) || ciphertextWithTag(56)
+ */
+export function buildAuditorCiphertextForNote(input: {
+  auditorViewingPubKey: Uint8Array;
+  tokenId: bigint;
+  amount: bigint;
+  commitment: Uint8Array;
+}): Uint8Array {
+  return encryptAuditorCiphertext(
+    input.auditorViewingPubKey,
+    { tokenId: input.tokenId, amount: input.amount },
+    input.commitment,
+  );
+}
+
+/**
+ * Normalise the `auditorCiphertext` field accepted by permissioned builders.
+ *
+ * Builders accept either:
+ *   - a pre-computed `Uint8Array` blob (advanced / off-chain computed), OR
+ *   - a plain-fields object `{ auditorViewingPubKey, tokenId, amount, commitment }`
+ *     which will be encrypted on the fly via `buildAuditorCiphertextForNote`.
+ *
+ * If both forms are supplied the explicit `Uint8Array` wins.
+ */
+export type AuditorCiphertextInput =
+  | Uint8Array
+  | { auditorViewingPubKey: Uint8Array; tokenId: bigint; amount: bigint; commitment: Uint8Array };
+
+export function resolveAuditorCiphertext(input: AuditorCiphertextInput): Uint8Array {
+  if (input instanceof Uint8Array) return input;
+  return buildAuditorCiphertextForNote(input);
+}
+
+/**
  * Decrypt an auditor ciphertext blob using the auditor's Ed25519 viewing private key.
  *
  * @param auditorViewingPrivKey - 32-byte Ed25519 private key of the auditor

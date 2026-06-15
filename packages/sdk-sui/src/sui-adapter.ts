@@ -19,6 +19,7 @@ import {
   assertSuiGroth16Compatible,
   joinSplitShape,
 } from "../../sdk-core/src/index";
+import { type AuditorCiphertextInput, resolveAuditorCiphertext } from "../../sdk/src/auditor-ciphertext";
 
 export interface UTXOpiaSuiAdapterConfig {
   rpcUrl: string;
@@ -857,9 +858,9 @@ export class UTXOpiaSuiAdapter implements UTXOpiaChainAdapter {
    * ref) so the auditor's wallet can provide it as a regular object argument.
    *
    * @param auditorCapId - Object ID of the auditor's `AuditorCap` owned object.
-   * @param auditorCiphertext - Raw bytes of the auditor ciphertext produced by
-   *   the auditor's off-chain helper. Threaded through to the on-chain event
-   *   log verbatim; no cryptography is performed here.
+   * @param auditorCiphertext - Either a pre-computed 112-byte `Uint8Array` blob, or
+   *   raw note fields `{ auditorViewingPubKey, tokenId, amount, commitment }` from
+   *   which the blob is computed automatically.
    */
   async buildCompleteDepositPermissioned(input: {
     /** Hash of the (canonical, sufficiently confirmed) block containing the sweep tx. */
@@ -881,11 +882,11 @@ export class UTXOpiaSuiAdapter implements UTXOpiaChainAdapter {
     /** Object ID of the auditor's AuditorCap (owned object). */
     auditorCapId: string;
     /**
-     * Auditor ciphertext produced by the auditor's off-chain helper.
-     * Passed as `vector<u8>` to the Move entry point. No cryptography
-     * is performed by this builder.
+     * Auditor ciphertext: either a pre-computed 112-byte `Uint8Array` blob (advanced
+     * / off-chain computed), OR the raw note fields `{ auditorViewingPubKey, tokenId,
+     * amount, commitment }` from which the blob is derived on the fly.
      */
-    auditorCiphertext: Uint8Array;
+    auditorCiphertext: AuditorCiphertextInput;
   }): Promise<SuiUnsignedTransaction> {
     if (!this.config.btcDepositRegistryObjectId) {
       throw new Error("Sui BTC deposit registry object ID is required to build permissioned BTC deposit PTBs");
@@ -901,6 +902,7 @@ export class UTXOpiaSuiAdapter implements UTXOpiaChainAdapter {
     }
 
     const tx = new Transaction();
+    const auditorCiphertext = resolveAuditorCiphertext(input.auditorCiphertext);
 
     // Step 1: SPV inclusion proof (same as the public path)
     const inclusion = tx.moveCall({
@@ -941,7 +943,7 @@ export class UTXOpiaSuiAdapter implements UTXOpiaChainAdapter {
         tx.pure.vector("u8", input.sweepRawTx),
         tx.pure.vector("u8", input.depositRawTx ?? new Uint8Array()),
         tx.pure.bool(input.directToPool),
-        tx.pure.vector("u8", input.auditorCiphertext),
+        tx.pure.vector("u8", auditorCiphertext),
       ],
     });
 
@@ -966,9 +968,9 @@ export class UTXOpiaSuiAdapter implements UTXOpiaChainAdapter {
    * `tx.object(auditorCapId)` (not a shared-object ref).
    *
    * @param auditorCapId - Object ID of the auditor's `AuditorCap` owned object.
-   * @param auditorCiphertext - Raw bytes of the auditor ciphertext produced by
-   *   the auditor's off-chain helper. Threaded through verbatim; no
-   *   cryptography is performed here.
+   * @param auditorCiphertext - Either a pre-computed 112-byte `Uint8Array` blob, or
+   *   raw note fields `{ auditorViewingPubKey, tokenId, amount, commitment }` from
+   *   which the blob is computed automatically.
    */
   async buildShieldPermissioned(input: {
     coinType: string;
@@ -986,11 +988,11 @@ export class UTXOpiaSuiAdapter implements UTXOpiaChainAdapter {
     /** Object ID of the auditor's AuditorCap (owned object). */
     auditorCapId: string;
     /**
-     * Auditor ciphertext produced by the auditor's off-chain helper.
-     * Passed as `vector<u8>` to the Move entry point. No cryptography
-     * is performed by this builder.
+     * Auditor ciphertext: either a pre-computed 112-byte `Uint8Array` blob (advanced
+     * / off-chain computed), OR the raw note fields `{ auditorViewingPubKey, tokenId,
+     * amount, commitment }` from which the blob is derived on the fly.
      */
-    auditorCiphertext: Uint8Array;
+    auditorCiphertext: AuditorCiphertextInput;
   }): Promise<SuiUnsignedTransaction> {
     if (!this.config.tokenRegistryObjectId) {
       throw new Error("Sui token registry object ID is required to build permissioned shield PTBs");
@@ -1000,6 +1002,7 @@ export class UTXOpiaSuiAdapter implements UTXOpiaChainAdapter {
     }
 
     const tx = new Transaction();
+    const auditorCiphertext = resolveAuditorCiphertext(input.auditorCiphertext);
     const fundingCoin = input.fundingCoin.version !== undefined && input.fundingCoin.digest !== undefined
       ? tx.objectRef({
           objectId: input.fundingCoin.objectId,
@@ -1031,7 +1034,7 @@ export class UTXOpiaSuiAdapter implements UTXOpiaChainAdapter {
         tx.pure.vector("u8", input.npk),
         tx.pure.vector("u8", input.ephemeralPub),
         shielded,
-        tx.pure.vector("u8", input.auditorCiphertext),
+        tx.pure.vector("u8", auditorCiphertext),
         tx.object.clock(),
       ],
     });

@@ -13,6 +13,7 @@ import {
 } from "@solana/kit";
 
 import { address, getConfig, TOKEN_2022_PROGRAM_ID } from "./config";
+import { type AuditorCiphertextInput, resolveAuditorCiphertext } from "./auditor-ciphertext";
 
 /** System program address */
 const SYSTEM_PROGRAM_ADDRESS = address("11111111111111111111111111111111");
@@ -1692,11 +1693,15 @@ export interface CompleteDepositPermissionedOptions {
   /** Deposit txid (32 bytes, internal byte order) */
   depositTxid: Uint8Array;
   /**
-   * Auditor ciphertext supplied by the auditor's off-chain helper.
-   * Threaded through to the on-chain event log verbatim; this builder does
-   * not perform any cryptography.
+   * Auditor ciphertext: either a pre-computed 112-byte `Uint8Array` blob (advanced
+   * / off-chain computed), OR the raw note fields from which the blob is derived
+   * on the fly via {@link buildAuditorCiphertextForNote}.
+   *
+   * If a `Uint8Array` is supplied it is used verbatim (preferred for auditors who
+   * hold the key off-chain).  Pass `{ auditorViewingPubKey, tokenId, amount, commitment }`
+   * to have the builder encrypt and embed the ciphertext automatically.
    */
-  auditorCiphertext: Uint8Array;
+  auditorCiphertext: AuditorCiphertextInput;
   /** Account addresses — same 15 as complete_deposit PLUS auditor at index 15 */
   accounts: {
     /** 0. pool_state (writable) */
@@ -1748,11 +1753,12 @@ export function buildCompleteDepositPermissionedInstructionData(options: {
   sweepTxSize: number;
   depositTxSize: number;
   depositTxid: Uint8Array;
-  auditorCiphertext: Uint8Array;
+  auditorCiphertext: AuditorCiphertextInput;
 }): Uint8Array {
   // disc(1) + sweep_txid(32) + block_height(8) + sweep_tx_size(4) + deposit_tx_size(4) + deposit_txid(32) + auditorCiphertext(variable)
+  const auditorCiphertext = resolveAuditorCiphertext(options.auditorCiphertext);
   const headerSize = 1 + 32 + 8 + 4 + 4 + 32; // 81 bytes
-  const data = new Uint8Array(headerSize + options.auditorCiphertext.length);
+  const data = new Uint8Array(headerSize + auditorCiphertext.length);
   const view = new DataView(data.buffer);
   let offset = 0;
 
@@ -1762,8 +1768,8 @@ export function buildCompleteDepositPermissionedInstructionData(options: {
   view.setUint32(offset, options.sweepTxSize, true); offset += 4;
   view.setUint32(offset, options.depositTxSize, true); offset += 4;
   data.set(options.depositTxid, offset); offset += 32;
-  if (options.auditorCiphertext.length > 0) {
-    data.set(options.auditorCiphertext, offset);
+  if (auditorCiphertext.length > 0) {
+    data.set(auditorCiphertext, offset);
   }
 
   return data;
@@ -1844,11 +1850,15 @@ export interface ShieldPermissionedInstructionOptions {
   /** Ephemeral public key (32) — for stealth address derivation */
   ephemeralPub: Uint8Array;
   /**
-   * Auditor ciphertext supplied by the auditor's off-chain helper.
-   * Threaded through to the on-chain event log verbatim; this builder does
-   * not perform any cryptography.
+   * Auditor ciphertext: either a pre-computed 112-byte `Uint8Array` blob (advanced
+   * / off-chain computed), OR the raw note fields from which the blob is derived
+   * on the fly via {@link buildAuditorCiphertextForNote}.
+   *
+   * If a `Uint8Array` is supplied it is used verbatim (preferred for auditors who
+   * hold the key off-chain).  Pass `{ auditorViewingPubKey, tokenId, amount, commitment }`
+   * to have the builder encrypt and embed the ciphertext automatically.
    */
-  auditorCiphertext: Uint8Array;
+  auditorCiphertext: AuditorCiphertextInput;
   /** Account addresses — same 7 as shield (disc=12) PLUS auditor at index 7 */
   accounts: {
     /** 0. user (writable signer) */
@@ -1883,11 +1893,12 @@ export function buildShieldPermissionedInstructionData(options: {
   amount: bigint;
   npk: Uint8Array;
   ephemeralPub: Uint8Array;
-  auditorCiphertext: Uint8Array;
+  auditorCiphertext: AuditorCiphertextInput;
 }): Uint8Array {
   // disc(1) + amount(8) + npk(32) + ephemeral_pub(32) + auditorCiphertext(variable)
+  const auditorCiphertext = resolveAuditorCiphertext(options.auditorCiphertext);
   const headerSize = 1 + 8 + 32 + 32; // 73 bytes
-  const data = new Uint8Array(headerSize + options.auditorCiphertext.length);
+  const data = new Uint8Array(headerSize + auditorCiphertext.length);
   const view = new DataView(data.buffer);
   let offset = 0;
 
@@ -1895,8 +1906,8 @@ export function buildShieldPermissionedInstructionData(options: {
   view.setBigUint64(offset, options.amount, true); offset += 8;
   data.set(options.npk.slice(0, 32), offset); offset += 32;
   data.set(options.ephemeralPub.slice(0, 32), offset); offset += 32;
-  if (options.auditorCiphertext.length > 0) {
-    data.set(options.auditorCiphertext, offset);
+  if (auditorCiphertext.length > 0) {
+    data.set(auditorCiphertext, offset);
   }
 
   return data;

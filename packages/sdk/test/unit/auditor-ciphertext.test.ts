@@ -3,6 +3,8 @@ import { ed25519GenerateKeyPair } from "../../src/crypto-ed25519";
 import {
   encryptAuditorCiphertext,
   decryptAuditorCiphertext,
+  buildAuditorCiphertextForNote,
+  AUDITOR_CIPHERTEXT_BYTES,
   type AuditorNotePlain,
 } from "../../src/auditor-ciphertext";
 
@@ -43,5 +45,43 @@ describe("auditor-ciphertext", () => {
     const blob = encryptAuditorCiphertext(auditor.pubKey, plain, COMMITMENT);
     const decoded = decryptAuditorCiphertext(auditor.privKey, blob, wrongCommitment);
     expect(decoded).toBeNull();
+  });
+});
+
+describe("buildAuditorCiphertextForNote", () => {
+  it("produces a 112-byte blob that decrypts back to the same tokenId and amount", () => {
+    const auditor = ed25519GenerateKeyPair();
+    const tokenId = 0xc0ffee_deadbeefn;
+    const amount = 5_000_000n;
+    const commitment = new Uint8Array(32).fill(0x7e);
+
+    const blob = buildAuditorCiphertextForNote({
+      auditorViewingPubKey: auditor.pubKey,
+      tokenId,
+      amount,
+      commitment,
+    });
+
+    expect(blob.length).toBe(AUDITOR_CIPHERTEXT_BYTES);
+
+    const decoded = decryptAuditorCiphertext(auditor.privKey, blob, commitment);
+    expect(decoded).not.toBeNull();
+    expect(decoded!.tokenId).toBe(tokenId);
+    expect(decoded!.amount).toBe(amount);
+  });
+
+  it("different auditor key cannot decrypt the blob", () => {
+    const auditor = ed25519GenerateKeyPair();
+    const wrong = ed25519GenerateKeyPair();
+    const commitment = new Uint8Array(32).fill(0x11);
+
+    const blob = buildAuditorCiphertextForNote({
+      auditorViewingPubKey: auditor.pubKey,
+      tokenId: 1n,
+      amount: 100n,
+      commitment,
+    });
+
+    expect(decryptAuditorCiphertext(wrong.privKey, blob, commitment)).toBeNull();
   });
 });
