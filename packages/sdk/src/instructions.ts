@@ -1182,6 +1182,8 @@ export function buildProposePoolUpdateInstruction(options: ProposePoolUpdateOpti
 export interface ExecutePoolUpdateOptions {
   accounts: {
     poolState: Address;
+    /** Pool authority — must sign (execute is authority-only; audit f11). */
+    authority: Address;
   };
 }
 
@@ -1195,10 +1197,11 @@ export function buildExecutePoolUpdateInstructionData(): Uint8Array {
 }
 
 /**
- * Build a complete execute_pool_update instruction (permissionless)
+ * Build a complete execute_pool_update instruction (authority-only)
  *
  * Accounts:
  * 0. pool_state (writable)
+ * 1. authority (signer)
  */
 export function buildExecutePoolUpdateInstruction(options: ExecutePoolUpdateOptions): Instruction {
   const config = getConfig();
@@ -1207,6 +1210,7 @@ export function buildExecutePoolUpdateInstruction(options: ExecutePoolUpdateOpti
     programAddress: config.utxopiaProgramId,
     accounts: [
       { address: options.accounts.poolState, role: AccountRole.WRITABLE },
+      { address: options.accounts.authority, role: AccountRole.READONLY_SIGNER },
     ],
     data: buildExecutePoolUpdateInstructionData(),
   };
