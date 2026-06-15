@@ -124,6 +124,10 @@ export {
   AUDITOR_CIPHERTEXT_BYTES,
   type AuditorNotePlain,
 } from "./auditor-ciphertext";
+export {
+  generateAuditorViewingKeypair,
+  deriveAuditorViewingKeypair,
+} from "./keys";
 
 // Sender memo channel (Phase 2)
 export {

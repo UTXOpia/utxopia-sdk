@@ -52,6 +52,8 @@ import {
 } from "./crypto";
 import {
   ed25519GetPublicKey,
+  ed25519GenerateKeyPair,
+  ed25519DeriveKeyFromSeed,
 } from "./crypto-ed25519";
 import { computeMPKSync, poseidonHashSync } from "./poseidon";
 import { BABYJUB_ORDER } from "./crypto-babyjub";
@@ -1113,6 +1115,38 @@ export function recreateStealthAddress(keys: UTXOpiaKeys): {
   const stealthAddress = createStealthMetaAddress(keys);
   const stealthAddressEncoded = encodeStealthMetaAddress(stealthAddress);
   return { stealthAddress, stealthAddressEncoded };
+}
+
+// ========== Auditor Viewing Keypair ==========
+
+/**
+ * Generate a random Ed25519 auditor viewing keypair.
+ *
+ * Thin wrapper over `ed25519GenerateKeyPair`. The returned keys are suitable
+ * for use as the auditor viewing key pair in `encryptAuditorCiphertext` /
+ * `decryptAuditorCiphertext`.
+ *
+ * @returns 32-byte private key and 32-byte Ed25519 public key
+ */
+export function generateAuditorViewingKeypair(): { privKey: Uint8Array; pubKey: Uint8Array } {
+  return ed25519GenerateKeyPair();
+}
+
+/**
+ * Derive a deterministic Ed25519 auditor viewing keypair from a 32-byte seed.
+ *
+ * Uses `ed25519DeriveKeyFromSeed` which SHA-256s the seed to produce the
+ * Ed25519 private key, then derives the matching public key. Same seed always
+ * yields the same keypair; different seeds yield different keypairs.
+ *
+ * @param seed - 32-byte seed (e.g. from a KDF or random source)
+ * @returns 32-byte private key and 32-byte Ed25519 public key
+ */
+export function deriveAuditorViewingKeypair(seed: Uint8Array): { privKey: Uint8Array; pubKey: Uint8Array } {
+  if (seed.length !== 32) {
+    throw new Error("seed must be 32 bytes");
+  }
+  return ed25519DeriveKeyFromSeed(seed);
 }
 
 // ========== Utilities ==========
