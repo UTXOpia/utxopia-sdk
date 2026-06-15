@@ -168,11 +168,10 @@ export function decryptAuditorCiphertext(
   const nonce = blob.slice(EPH_PUB_BYTES, EPH_PUB_BYTES + NONCE_BYTES);
   const ciphertextWithTag = blob.slice(EPH_PUB_BYTES + NONCE_BYTES);
 
-  const auditorXPriv = ed25519PrivToX25519(auditorViewingPrivKey);
-  const shared = x25519.getSharedSecret(auditorXPriv, ephPub);
-  const key = deriveKey(shared);
-
   try {
+    const auditorXPriv = ed25519PrivToX25519(auditorViewingPrivKey);
+    const shared = x25519.getSharedSecret(auditorXPriv, ephPub);
+    const key = deriveKey(shared);
     const aead = xchacha20poly1305(key, nonce, commitment);
     const plaintext = aead.decrypt(ciphertextWithTag);
     return unpackPlaintext(plaintext);
