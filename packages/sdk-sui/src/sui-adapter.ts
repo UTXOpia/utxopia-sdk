@@ -578,6 +578,16 @@ export class UTXOpiaSuiAdapter implements UTXOpiaChainAdapter {
    */
   async buildIkaApprovalTransaction(input: {
     redemptionId: bigint | number;
+    /**
+     * Which input's sighash this approval authorizes (taproot signs each input
+     * separately). Call once per reserved input. The `sighash` MUST be the
+     * BIP-341 key-spend sighash the on-chain policy reconstructs for this index;
+     * the off-chain tx builder MUST therefore use nVersion=2, nLockTime=0,
+     * per-input nSequence=0xFFFFFFFD, inputs ordered amount-DESC/txid-ASC/vout-ASC
+     * (all spending the pool taproot scriptPubKey), output[0]=recipient(amount),
+     * output[1]=change-to-pool iff change>330 sats. Any mismatch aborts.
+     */
+    inputIndex: number;
     sighash: Uint8Array;
     /** Ika dWallet cap object the approval is bound to. */
     dwalletCapId: string;
@@ -586,6 +596,9 @@ export class UTXOpiaSuiAdapter implements UTXOpiaChainAdapter {
   }): Promise<SuiUnsignedTransaction> {
     if (!this.config.redemptionQueueObjectId) {
       throw new Error("Sui redemption queue object ID is required to build Ika approval PTBs");
+    }
+    if (!this.config.utxoSetObjectId) {
+      throw new Error("Sui UTXO set object ID is required to build Ika approval PTBs");
     }
     const redemptionCap = this.redemptionCapRef();
 
@@ -601,8 +614,10 @@ export class UTXOpiaSuiAdapter implements UTXOpiaChainAdapter {
           this.config.redemptionQueueInitialSharedVersion,
           false,
         ),
+        this.sharedObject(tx, this.config.utxoSetObjectId, this.config.utxoSetInitialSharedVersion, false),
         tx.pure.address(input.dwalletCapId),
         tx.pure.u64(input.redemptionId.toString()),
+        tx.pure.u32(input.inputIndex),
         tx.pure.u64(input.estimatedMinerFeeSats.toString()),
         tx.pure.vector("u8", input.sighash),
       ],
@@ -612,6 +627,7 @@ export class UTXOpiaSuiAdapter implements UTXOpiaChainAdapter {
       redemptionCap.objectId,
       this.config.poolObjectId,
       this.config.redemptionQueueObjectId,
+      this.config.utxoSetObjectId,
     ]);
   }
 
