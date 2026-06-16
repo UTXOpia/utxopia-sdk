@@ -204,9 +204,9 @@ export const LOCALNET_CHADBUFFER_PROGRAM_ID: Address = address(
 /**
  * Devnet Configuration (v3.3.0)
  *
- * Fresh deployment 2026-03-13:
+ * Fresh deployment 2026-03-25:
  * - RedemptionRequest PDA now 98 bytes (service_fee locked at request time)
- * - Program ID: 7JJeVjVCy1fZqCDWvf41R7LuTWirTjX7Tp6suC2WVUMQ
+ * - Program ID: AjbX243s2JMFG2uhfTjKkadjPvQEPgcuyV3vfLJv36MT
  */
 export const DEVNET_CONFIG: NetworkConfig = {
   network: "devnet",
