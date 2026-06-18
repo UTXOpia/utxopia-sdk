@@ -167,15 +167,22 @@ export function createRedeemBoundParams(
   }
   // Normalize to array
   const scripts = btcScripts instanceof Uint8Array ? [btcScripts] : btcScripts;
-  // Concatenate all scripts
-  const totalLen = scripts.reduce((sum, s) => sum + s.length, 0);
-  const concat = new Uint8Array(totalLen);
-  let off = 0;
+  // Length-prefixed scripts hash (audit #4): sha256(u32le(count) || per-script
+  // [u32le(len) || bytes]). Binds the script boundaries so a redeem proof cannot be
+  // replayed with the scripts re-partitioned to the same concatenation. Must match the
+  // on-chain Solana `length_prefixed_hash` in compute_bound_params_hash_redeem.
+  const lpParts: Uint8Array[] = [u32le(scripts.length)];
   for (const s of scripts) {
-    concat.set(s, off);
-    off += s.length;
+    lpParts.push(u32le(s.length), s);
   }
-  const scriptHash = sha256(concat);
+  const lpTotal = lpParts.reduce((sum, p) => sum + p.length, 0);
+  const lp = new Uint8Array(lpTotal);
+  let off = 0;
+  for (const p of lpParts) {
+    lp.set(p, off);
+    off += p.length;
+  }
+  const scriptHash = sha256(lp);
   return {
     treeNumber,
     unshieldAddress: scriptHash,

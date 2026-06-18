@@ -146,9 +146,9 @@ describe("boundParamsHash cross-language parity", () => {
     const hashHex = Array.from(hashBytes).map(b => b.toString(16).padStart(2, "0")).join("");
 
     // Cross-layer vector — must equal compute_bound_params_hash_redeem on-chain
-    // (Rust test: redeem_bound_params_binds_requester). Changed from the pre-#9 value
-    // because the 32-byte requester is now appended to the hashed preimage.
-    expect(hashHex).toBe("0a2d4cdcdeff70c6c7036a7177b3a9380e838ea433471280fd1a5a7ba4ae2e28");
+    // (Rust test: redeem_bound_params_binds_requester). Changed for audit #4:
+    // scripts are now length-prefixed (count + per-script length) before hashing.
+    expect(hashHex).toBe("2bd645748800b0c1d5ba5c25fb9ea6bab8e018686d4e215b3c9b5b5905304121");
   });
 
   it("transfer with non-zero stealth: chain_id=103, stealth=0xCC*32", () => {
