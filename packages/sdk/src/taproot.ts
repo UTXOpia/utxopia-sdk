@@ -384,6 +384,29 @@ export function computeDepositPoolTag(parts: Uint8Array[]): Uint8Array {
 }
 
 /**
+ * Compute the Sui deposit OP_RETURN pool tag.
+ *
+ * MUST match the on-chain `btc_deposit::expected_pool_tag`, which is bound to the POOL ONLY
+ * (no commitment-tree component) so deposits survive a tree rotation:
+ *
+ *   sha256("UTXOPIA_SUI" || bcs(pool_id))[0..8]
+ *
+ * A Sui address (and a shared object id) serializes under BCS as its raw 32 bytes, so
+ * `poolObjectId` is the 0x-prefixed 32-byte object id of the shared `Pool`.
+ */
+export function computeSuiDepositPoolTag(poolObjectId: string): Uint8Array {
+  const clean = poolObjectId.startsWith("0x") ? poolObjectId.slice(2) : poolObjectId;
+  if (clean.length !== 64) {
+    throw new Error(`Sui pool object id must be 32 bytes (64 hex chars), got ${clean.length}`);
+  }
+  const idBytes = new Uint8Array(32);
+  for (let i = 0; i < 32; i++) {
+    idBytes[i] = parseInt(clean.slice(i * 2, i * 2 + 2), 16);
+  }
+  return computeDepositPoolTag([new TextEncoder().encode("UTXOPIA_SUI"), idBytes]);
+}
+
+/**
  * Create an OP_RETURN script from an arbitrary payload (up to 80 bytes).
  *
  * Format: OP_RETURN (0x6a) + OP_PUSHDATA (length byte) + payload

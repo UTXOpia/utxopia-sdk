@@ -3,10 +3,29 @@ import {
   isValidBitcoinAddress,
   buildDepositOpReturn,
   parseDepositOpReturn,
+  computeSuiDepositPoolTag,
   DEPOSIT_BITCOIN_NETWORK,
   DEPOSIT_DESTINATION_CHAIN,
   DEPOSIT_OP_RETURN_SIZE,
 } from "../../src/taproot";
+
+describe("computeSuiDepositPoolTag", () => {
+  // Cross-language lock with the on-chain Move `btc_deposit::expected_pool_tag`
+  // (pool-only tag, audit CRITICAL #0). The Move test
+  // `btc_deposit_tests::pool_tag_matches_sdk_vector` pins this same 8-byte vector for
+  // pool id 0x01*32: sha256("UTXOPIA_SUI" || 0x01*32)[0..8] = bf020d6c8198041c.
+  it("matches the on-chain tag for pool id 0x01*32", () => {
+    const tag = computeSuiDepositPoolTag("0x" + "01".repeat(32));
+    expect(Buffer.from(tag).toString("hex")).toBe("bf020d6c8198041c");
+  });
+
+  it("accepts a non-0x-prefixed id and rejects wrong sizes", () => {
+    expect(Buffer.from(computeSuiDepositPoolTag("01".repeat(32))).toString("hex")).toBe(
+      "bf020d6c8198041c",
+    );
+    expect(() => computeSuiDepositPoolTag("0x1234")).toThrow();
+  });
+});
 
 describe("DEPOSIT_OP_RETURN_SIZE", () => {
   it("should equal compact deposit payload size", () => {
