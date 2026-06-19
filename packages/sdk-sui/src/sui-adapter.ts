@@ -425,6 +425,8 @@ export class UTXOpiaSuiAdapter implements UTXOpiaChainAdapter {
     npk: Uint8Array;
     /** Ephemeral pubkey for the stealth announcement. */
     ephemeralPub: Uint8Array;
+    /** Optional auditor-encrypted ciphertext emitted with the shield event; empty when no auditor. */
+    auditorCiphertext?: Uint8Array;
   }): Promise<SuiUnsignedTransaction> {
     if (!this.config.tokenRegistryObjectId) {
       throw new Error("Sui token registry object ID is required to build shield PTBs");
@@ -463,6 +465,7 @@ export class UTXOpiaSuiAdapter implements UTXOpiaChainAdapter {
         tx.pure.vector("u8", input.ephemeralPub),
         shielded,
         tx.object.clock(),
+        tx.pure.vector("u8", input.auditorCiphertext ?? new Uint8Array()),
       ],
     });
 
