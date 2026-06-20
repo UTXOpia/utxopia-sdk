@@ -408,6 +408,58 @@ export class UTXOpiaSuiAdapter implements UTXOpiaChainAdapter {
   }
 
   /**
+   * Admin-gated `Coin<T>` registration for coins whose legacy `CoinMetadata<T>`
+   * object is unavailable. Native SUI uses this path on current testnet.
+   */
+  async buildRegisterTokenWithDecimalsTransaction(input: {
+    coinType: string;
+    decimals: number;
+    minDeposit: bigint | number;
+    maxDeposit: bigint | number;
+    depositCap: bigint | number;
+    feeBps: number;
+  }): Promise<SuiUnsignedTransaction> {
+    if (!this.config.adminCapObjectId || !this.config.adminCapVersion || !this.config.adminCapDigest) {
+      throw new Error("Sui admin cap object ref is required to register tokens");
+    }
+    if (!this.config.tokenRegistryObjectId) {
+      throw new Error("Sui token registry object ID is required to register tokens");
+    }
+
+    const tx = new Transaction();
+    const adminCap = tx.objectRef({
+      objectId: this.config.adminCapObjectId,
+      version: this.config.adminCapVersion,
+      digest: this.config.adminCapDigest,
+    });
+    tx.moveCall({
+      target: `${this.config.packageId}::token_registry::register_token_with_decimals`,
+      typeArguments: [input.coinType],
+      arguments: [
+        adminCap,
+        this.sharedObject(tx, this.config.poolObjectId, this.config.poolInitialSharedVersion, false),
+        this.sharedObject(
+          tx,
+          this.config.tokenRegistryObjectId,
+          this.config.tokenRegistryInitialSharedVersion,
+          true,
+        ),
+        tx.pure.u8(input.decimals),
+        tx.pure.u64(input.minDeposit.toString()),
+        tx.pure.u64(input.maxDeposit.toString()),
+        tx.pure.u64(input.depositCap.toString()),
+        tx.pure.u16(input.feeBps),
+      ],
+    });
+
+    return this.buildPtb(tx, "Sui register token with decimals PTB", [
+      this.config.adminCapObjectId,
+      this.config.poolObjectId,
+      this.config.tokenRegistryObjectId,
+    ]);
+  }
+
+  /**
    * Single-PTB shield: split the exact `amount` off the funding `Coin<T>` and
    * `token_registry::shield<T>` it atomically (one signature, no approve step).
    * The split remainder stays with the sender as change.

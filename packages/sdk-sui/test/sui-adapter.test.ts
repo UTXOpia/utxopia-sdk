@@ -281,6 +281,21 @@ test("builds register token PTB transaction-kind bytes offline", async () => {
   expect(tx.objectIds).toContain(objectId);
 });
 
+test("builds native SUI register-with-decimals PTB transaction-kind bytes offline", async () => {
+  const tx = await adapter().buildRegisterTokenWithDecimalsTransaction({
+    coinType: SUI_COIN_TYPE,
+    decimals: 9,
+    minDeposit: 100n,
+    maxDeposit: 1_000_000n,
+    depositCap: 10_000_000n,
+    feeBps: 50,
+  });
+
+  expect(tx.kind).toBe("sui-programmable-transaction-block");
+  expect(tx.bytes.length).toBeGreaterThan(0);
+  expect(tx.objectIds).toContain(objectId);
+});
+
 test("builds single-PTB shield transaction-kind bytes offline", async () => {
   const tx = await adapter().buildShieldTokenTransaction({
     coinType: SUI_COIN_TYPE,
