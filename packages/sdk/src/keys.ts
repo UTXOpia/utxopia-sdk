@@ -137,6 +137,42 @@ export interface AuthSignatureKeySetupResult {
   root: Uint8Array;
 }
 
+export const PASSKEY_CHAIN_SCOPE_DOMAIN = "utxopia-passkey-chain:v1";
+
+export type PasskeyChainScope = "sol" | "sui";
+
+export interface ChainScopedPasskeyOptions {
+  chain: PasskeyChainScope;
+  network: string;
+}
+
+/**
+ * Scope a passkey seed to one app chain+network identity.
+ *
+ * This convention is intentionally centralized in the SDK so apps, tests, and
+ * dev tooling derive the same private address without duplicating string
+ * literals.
+ */
+export function deriveChainScopedPasskeySeed(
+  seed: Uint8Array,
+  options: ChainScopedPasskeyOptions,
+): Uint8Array {
+  const domain = new TextEncoder().encode(
+    `${PASSKEY_CHAIN_SCOPE_DOMAIN}:${options.chain}:${options.network}`,
+  );
+  const material = new Uint8Array(domain.length + seed.length);
+  material.set(domain, 0);
+  material.set(seed, domain.length);
+  return sha256(material);
+}
+
+export function passkeyStorageOwner(
+  credentialId: string,
+  options: ChainScopedPasskeyOptions,
+): string {
+  return `passkey:${credentialId}:${options.chain}:${options.network}`;
+}
+
 /**
  * View permission flags for delegated viewing keys
  */

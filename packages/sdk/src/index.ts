@@ -81,11 +81,16 @@ export {
   // Key serialization
   serializeKeysForStorage,
   deserializeKeysFromStorage,
+  PASSKEY_CHAIN_SCOPE_DOMAIN,
+  deriveChainScopedPasskeySeed,
+  passkeyStorageOwner,
   // Types
   type UTXOpiaKeys,
   type KeySetupResult,
   type AuthSignatureKeyDerivationOptions,
   type AuthSignatureKeySetupResult,
+  type ChainScopedPasskeyOptions,
+  type PasskeyChainScope,
   type SerializedKeysForStorage,
   type StealthMetaAddress,
   type WalletSignerAdapter,

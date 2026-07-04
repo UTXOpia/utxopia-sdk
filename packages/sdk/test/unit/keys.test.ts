@@ -5,6 +5,8 @@ import {
   serializeStealthMetaAddress,
   deserializeStealthMetaAddress,
   createStealthMetaAddress,
+  deriveChainScopedPasskeySeed,
+  passkeyStorageOwner,
   hasPermission,
   ViewPermissions,
   constantTimeCompare,
@@ -63,6 +65,28 @@ describe("deriveKeysFromSeed", () => {
   it("spending private key is non-zero", () => {
     const keys = deriveKeysFromSeed(seed);
     expect(keys.spendingPrivKey).not.toBe(0n);
+  });
+});
+
+describe("chain-scoped passkey identity", () => {
+  const seed = new Uint8Array(32).fill(0x42);
+
+  it("uses canonical sol/sui scopes for passkey seed derivation", () => {
+    const sol = deriveChainScopedPasskeySeed(seed, { chain: "sol", network: "devnet-regtest" });
+    const sui = deriveChainScopedPasskeySeed(seed, { chain: "sui", network: "sui-testnet" });
+    const solDevnet = deriveChainScopedPasskeySeed(seed, { chain: "sol", network: "devnet" });
+
+    expect(sol).toBeInstanceOf(Uint8Array);
+    expect(sol.length).toBe(32);
+    expect(sol).not.toEqual(sui);
+    expect(sol).not.toEqual(solDevnet);
+  });
+
+  it("uses the same canonical scope in passkey storage owner ids", () => {
+    expect(passkeyStorageOwner("default", { chain: "sol", network: "devnet-regtest" }))
+      .toBe("passkey:default:sol:devnet-regtest");
+    expect(passkeyStorageOwner("default", { chain: "sui", network: "sui-testnet" }))
+      .toBe("passkey:default:sui:sui-testnet");
   });
 });
 
