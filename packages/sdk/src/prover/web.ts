@@ -18,6 +18,7 @@ import {
 import { BN254_FIELD_PRIME } from "../crypto";
 import { TREE_DEPTH } from "../merkle";
 import { getConfig } from "../config";
+import { MAX_SAFE_JOINSPLIT_SIZE } from "../vk-registry";
 import type { Address } from "@solana/kit";
 
 /** Maximum satoshis (total BTC supply) */
@@ -202,10 +203,11 @@ function getJoinSplitCircuitType(nInputs: number, nOutputs: number): CircuitType
     !Number.isInteger(nOutputs) ||
     nInputs < 1 ||
     nOutputs < 1 ||
-    nInputs + nOutputs > 14
+    nInputs + nOutputs > MAX_SAFE_JOINSPLIT_SIZE
   ) {
     throw new Error(
-      `Invalid JoinSplit dimensions: ${nInputs}x${nOutputs} (N+M must be 2..14)`,
+      `Invalid JoinSplit dimensions: ${nInputs}x${nOutputs} ` +
+        `(N+M must be 2..${MAX_SAFE_JOINSPLIT_SIZE})`,
     );
   }
   return `joinsplit_${nInputs}x${nOutputs}`;

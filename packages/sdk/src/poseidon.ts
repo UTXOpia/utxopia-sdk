@@ -29,8 +29,9 @@ import {
   poseidon16,
 } from "poseidon-lite";
 
-// Lookup table for poseidon hash by input count (1-16 covers all circuit arities)
-// Max arity = 2 + N + M where N+M <= 14, so up to 16 inputs for msgHash
+// Lookup table for poseidon hash by input count. JoinSplit currently needs at
+// most 12 (2 fixed fields + N+M<=10); the larger arities remain available to
+// other SDK callers.
 const poseidonFns = [
   undefined,    // 0 — unused
   poseidon1,    // 1 input
@@ -212,4 +213,3 @@ export function computeTokenIdFromAddress(mintAddress: string): bigint {
   // For now, caller should pass raw bytes via computeTokenId
   throw new Error("Use computeTokenId(mintBytes) with raw pubkey bytes");
 }
-

@@ -143,19 +143,19 @@ describe("CIRCUIT TYPE VALIDATION", () => {
     for (const { inputs, outputs } of validArities) {
       expect(inputs).toBeGreaterThan(0);
       expect(outputs).toBeGreaterThan(0);
-      expect(inputs + outputs).toBeLessThanOrEqual(14);
+      expect(inputs + outputs).toBeLessThanOrEqual(10);
     }
 
     // Invalid arities (not supported)
     const invalidArities = [
       { inputs: 0, outputs: 1 },
       { inputs: 1, outputs: 0 },
-      { inputs: 14, outputs: 1 },
-      { inputs: 1, outputs: 14 },
+      { inputs: 10, outputs: 1 },
+      { inputs: 1, outputs: 10 },
     ];
 
     for (const { inputs, outputs } of invalidArities) {
-      expect(inputs === 0 || outputs === 0 || inputs + outputs > 14).toBe(true);
+      expect(inputs === 0 || outputs === 0 || inputs + outputs > 10).toBe(true);
     }
   });
 
@@ -196,7 +196,7 @@ describe("CIRCUIT TYPE VALIDATION", () => {
     globalThis.fetch = fetchMock as typeof fetch;
     setCircuitPath("https://cdn.example.test/circuits-c");
 
-    expect(preloadJoinSplitCircuit(8, 7)).rejects.toThrow(
+    expect(preloadJoinSplitCircuit(6, 5)).rejects.toThrow(
       "Invalid JoinSplit dimensions",
     );
     expect(fetchMock).not.toHaveBeenCalled();
