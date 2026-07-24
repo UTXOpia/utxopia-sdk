@@ -233,7 +233,7 @@ export const DEVNET_CONFIG: NetworkConfig = {
   esploraUrl: "https://mempool.space/testnet4/api",
 
   // Circuit CDN (Groth16 artifacts: .wasm, .zkey files)
-  circuitCdnUrl: "https://circuit.utxopia.com",
+  circuitCdnUrl: "https://circuit.utxopia.com/circuits/v2/groth16",
 
   // Groth16 Verifier: verification is inline in the UTXOpia program (no separate verifier program)
   groth16VerifierProgramId: address("AjbX243s2JMFG2uhfTjKkadjPvQEPgcuyV3vfLJv36MT"), // inline in utxopia program
