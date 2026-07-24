@@ -77,7 +77,11 @@ let circuitBasePath = isBrowser ? "/circuits/groth16" : "./circuits";
  * Set the base path for circuit artifacts
  */
 export function setCircuitPath(path: string): void {
+  if (path === circuitBasePath) return;
   circuitBasePath = path;
+  circuitCache.clear();
+  artifactBytesCache.clear();
+  artifactDownloadCache.clear();
 }
 
 /**
@@ -129,18 +133,30 @@ async function ensureSnarkjsLoaded(): Promise<void> {
  * memory (Railgun-style) makes proving IO-free.
  */
 const artifactBytesCache = new Map<string, Uint8Array>();
+const artifactDownloadCache = new Map<string, Promise<Uint8Array>>();
 
 type FastFileMem = { type: "mem"; data: Uint8Array };
 
 async function fetchArtifactToMemory(url: string): Promise<FastFileMem> {
   const cached = artifactBytesCache.get(url);
   if (cached) return { type: "mem", data: cached };
-  const res = await fetch(url);
-  if (!res.ok) {
-    throw new Error(`Failed to fetch circuit artifact ${url}: HTTP ${res.status}`);
+
+  let download = artifactDownloadCache.get(url);
+  if (!download) {
+    download = (async () => {
+      const res = await fetch(url, { cache: "force-cache" });
+      if (!res.ok) {
+        throw new Error(`Failed to fetch circuit artifact ${url}: HTTP ${res.status}`);
+      }
+      const bytes = new Uint8Array(await res.arrayBuffer());
+      artifactBytesCache.set(url, bytes);
+      return bytes;
+    })();
+    artifactDownloadCache.set(url, download);
+    void download.finally(() => artifactDownloadCache.delete(url)).catch(() => {});
   }
-  const bytes = new Uint8Array(await res.arrayBuffer());
-  artifactBytesCache.set(url, bytes);
+
+  const bytes = await download;
   return { type: "mem", data: bytes };
 }
 
@@ -178,6 +194,35 @@ function getCircuitArtifactPaths(circuitType: CircuitType): CircuitArtifact {
 
   circuitCache.set(circuitType, artifact);
   return artifact;
+}
+
+function getJoinSplitCircuitType(nInputs: number, nOutputs: number): CircuitType {
+  if (
+    !Number.isInteger(nInputs) ||
+    !Number.isInteger(nOutputs) ||
+    nInputs < 1 ||
+    nOutputs < 1 ||
+    nInputs + nOutputs > 14
+  ) {
+    throw new Error(
+      `Invalid JoinSplit dimensions: ${nInputs}x${nOutputs} (N+M must be 2..14)`,
+    );
+  }
+  return `joinsplit_${nInputs}x${nOutputs}`;
+}
+
+/**
+ * Download the selected JoinSplit artifacts into the browser cache and the
+ * prover's in-memory fastfile cache without generating a proof. Calling this
+ * while the user reviews a transaction removes CDN latency from the confirm
+ * path. Concurrent preloads and proofs share the same downloads.
+ */
+export async function preloadJoinSplitCircuit(
+  nInputs: number,
+  nOutputs: number,
+): Promise<void> {
+  const circuitType = getJoinSplitCircuitType(nInputs, nOutputs);
+  await resolveProveArtifacts(getCircuitArtifactPaths(circuitType));
 }
 
 type InputMap = Record<string, string | string[] | number[] | string[][] | number[][]>;
@@ -467,9 +512,7 @@ export interface JoinSplitProofInputs {
 export async function generateJoinSplitProof(inputs: JoinSplitProofInputs): Promise<ProofData> {
   const { nInputs, nOutputs } = inputs;
 
-  if (nInputs < 1 || nOutputs < 1 || nInputs + nOutputs > 14) {
-    throw new Error(`Invalid JoinSplit dimensions: ${nInputs}x${nOutputs} (N+M must be 2..14)`);
-  }
+  const variantName = getJoinSplitCircuitType(nInputs, nOutputs);
 
   // Validate array lengths match declared dimensions
   if (inputs.inputs.length !== nInputs) {
@@ -570,7 +613,6 @@ export async function generateJoinSplitProof(inputs: JoinSplitProofInputs): Prom
   }
   circuitInputs.pathElements = pathElements as any;
 
-  const variantName: CircuitType = `joinsplit_${nInputs}x${nOutputs}`;
   return generateProof(variantName, circuitInputs);
 }
 

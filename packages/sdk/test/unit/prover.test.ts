@@ -10,13 +10,23 @@
  * - Signature = EdDSA-Poseidon over (merkleRoot, boundParamsHash, nullifiers..., commitmentsOut...)
  */
 
-import { expect, test, describe, beforeAll } from "bun:test";
+import { expect, test, describe, beforeAll, afterEach, mock } from "bun:test";
 import { initPoseidon } from "../../src/poseidon";
 import { BN254_FIELD_PRIME } from "../../src/crypto";
+import {
+  preloadJoinSplitCircuit,
+  setCircuitPath,
+} from "../../src/prover/web";
+
+const originalFetch = globalThis.fetch;
 
 // Set up Poseidon for tests
 beforeAll(async () => {
   await initPoseidon();
+});
+
+afterEach(() => {
+  globalThis.fetch = originalFetch;
 });
 
 // ============================================================================
@@ -133,21 +143,63 @@ describe("CIRCUIT TYPE VALIDATION", () => {
     for (const { inputs, outputs } of validArities) {
       expect(inputs).toBeGreaterThan(0);
       expect(outputs).toBeGreaterThan(0);
-      expect(inputs).toBeLessThanOrEqual(2);
-      expect(outputs).toBeLessThanOrEqual(2);
+      expect(inputs + outputs).toBeLessThanOrEqual(14);
     }
 
     // Invalid arities (not supported)
     const invalidArities = [
       { inputs: 0, outputs: 1 },
       { inputs: 1, outputs: 0 },
-      { inputs: 3, outputs: 1 },
-      { inputs: 1, outputs: 3 },
+      { inputs: 14, outputs: 1 },
+      { inputs: 1, outputs: 14 },
     ];
 
     for (const { inputs, outputs } of invalidArities) {
-      expect(inputs === 0 || outputs === 0 || inputs > 2 || outputs > 2).toBe(true);
+      expect(inputs === 0 || outputs === 0 || inputs + outputs > 14).toBe(true);
     }
+  });
+
+  test("preloads both artifacts with browser-cache reuse enabled", async () => {
+    const fetchMock = mock(async () => new Response(new Uint8Array([1, 2, 3])));
+    globalThis.fetch = fetchMock as typeof fetch;
+    setCircuitPath("https://cdn.example.test/circuits-a");
+
+    await preloadJoinSplitCircuit(1, 3);
+
+    expect(fetchMock).toHaveBeenCalledTimes(2);
+    const calls = fetchMock.mock.calls as unknown as Array<[string, RequestInit]>;
+    expect(calls.map(([url]) => url).sort()).toEqual([
+      "https://cdn.example.test/circuits-a/joinsplit_1x3/joinsplit_1x3.zkey",
+      "https://cdn.example.test/circuits-a/joinsplit_1x3/joinsplit_1x3_js/joinsplit_1x3.wasm",
+    ]);
+    expect(calls.every(([, init]) => init.cache === "force-cache")).toBe(true);
+  });
+
+  test("deduplicates concurrent artifact preloads", async () => {
+    const fetchMock = mock(async () => {
+      await Promise.resolve();
+      return new Response(new Uint8Array([4, 5, 6]));
+    });
+    globalThis.fetch = fetchMock as typeof fetch;
+    setCircuitPath("https://cdn.example.test/circuits-b");
+
+    await Promise.all([
+      preloadJoinSplitCircuit(2, 2),
+      preloadJoinSplitCircuit(2, 2),
+    ]);
+
+    expect(fetchMock).toHaveBeenCalledTimes(2);
+  });
+
+  test("rejects unavailable JoinSplit dimensions before fetching", async () => {
+    const fetchMock = mock(async () => new Response(new Uint8Array([7])));
+    globalThis.fetch = fetchMock as typeof fetch;
+    setCircuitPath("https://cdn.example.test/circuits-c");
+
+    expect(preloadJoinSplitCircuit(8, 7)).rejects.toThrow(
+      "Invalid JoinSplit dimensions",
+    );
+    expect(fetchMock).not.toHaveBeenCalled();
   });
 });
 
