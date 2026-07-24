@@ -635,7 +635,7 @@ describe("Cross-layer: buildUnshieldInstructionData (disc=14)", () => {
       expect(ix.accounts[5].role).toBe(AccountRole.WRITABLE);           // token_config
       expect(ix.accounts[6].role).toBe(AccountRole.WRITABLE);           // vault
       expect(ix.accounts[7].role).toBe(AccountRole.READONLY);           // token_program
-      expect(ix.accounts[8].role).toBe(AccountRole.WRITABLE);           // recipient token account
+      expect(ix.accounts[8].role).toBe(AccountRole.WRITABLE);           // public destination
       expect(ix.accounts[9].role).toBe(AccountRole.WRITABLE);           // nullifier_record
     });
   });
@@ -968,7 +968,7 @@ describe("Cross-layer: buildCompleteRedemptionInstructionData (disc=17)", () => 
   });
 
   describe("account count and order", () => {
-    it("base: 14 accounts (no consumed UTXOs)", () => {
+    it("base with change: 15 accounts (no consumed UTXOs)", () => {
       const ix = buildCompleteRedemptionInstruction({
         btcTxid: filledBytes(32, 0xaa),
         txSize: 225,
@@ -987,12 +987,13 @@ describe("Cross-layer: buildCompleteRedemptionInstructionData (disc=17)", () => 
           completionReceipt: fakeAddress("cr"),
           poolConfig: fakeAddress("pc"),
           changeUtxo: fakeAddress("change"),
+          tokenConfig: fakeAddress("tc"),
         },
       });
-      expect(ix.accounts.length).toBe(14);
+      expect(ix.accounts.length).toBe(15);
     });
 
-    it("with 3 consumed UTXOs: 14 + 3 = 17 accounts", () => {
+    it("with change and 3 consumed UTXOs: 15 + 3 = 18 accounts", () => {
       const ix = buildCompleteRedemptionInstruction({
         btcTxid: filledBytes(32, 0xaa),
         txSize: 225,
@@ -1011,13 +1012,14 @@ describe("Cross-layer: buildCompleteRedemptionInstructionData (disc=17)", () => 
           completionReceipt: fakeAddress("cr"),
           poolConfig: fakeAddress("pc"),
           changeUtxo: fakeAddress("change"),
+          tokenConfig: fakeAddress("tc"),
           consumedUtxos: [fakeAddress("u0"), fakeAddress("u1"), fakeAddress("u2")],
         },
       });
-      expect(ix.accounts.length).toBe(17);
+      expect(ix.accounts.length).toBe(18);
     });
 
-    it("account order matches Rust: pool(w), redemption(w), authority(ws), rent(r), vt(r), lc(r), buf(r), mint(w), vault(w), token(r), receipt(w), system(r), config(r), change(w)", () => {
+    it("account order matches Rust without change: fixed accounts, then token config", () => {
       const ix = buildCompleteRedemptionInstruction({
         btcTxid: filledBytes(32, 0xaa),
         txSize: 225,
@@ -1035,7 +1037,7 @@ describe("Cross-layer: buildCompleteRedemptionInstructionData (disc=17)", () => 
           poolVault: fakeAddress("vault"),
           completionReceipt: fakeAddress("cr"),
           poolConfig: fakeAddress("pc"),
-          changeUtxo: fakeAddress("change"),
+          tokenConfig: fakeAddress("tc"),
         },
       });
       expect(ix.accounts[0].role).toBe(AccountRole.WRITABLE);           // pool_state
@@ -1051,7 +1053,8 @@ describe("Cross-layer: buildCompleteRedemptionInstructionData (disc=17)", () => 
       expect(ix.accounts[10].role).toBe(AccountRole.WRITABLE);          // completion_receipt
       expect(ix.accounts[11].role).toBe(AccountRole.READONLY);          // system_program
       expect(ix.accounts[12].role).toBe(AccountRole.READONLY);          // pool_config
-      expect(ix.accounts[13].role).toBe(AccountRole.WRITABLE);          // change_utxo
+      expect(ix.accounts[13].address).toBe(fakeAddress("tc"));           // token_config
+      expect(ix.accounts[13].role).toBe(AccountRole.WRITABLE);
     });
 
     it("consumed UTXO accounts are all WRITABLE", () => {
@@ -1073,12 +1076,15 @@ describe("Cross-layer: buildCompleteRedemptionInstructionData (disc=17)", () => 
           completionReceipt: fakeAddress("cr"),
           poolConfig: fakeAddress("pc"),
           changeUtxo: fakeAddress("change"),
+          tokenConfig: fakeAddress("tc"),
           consumedUtxos: [fakeAddress("u0"), fakeAddress("u1")],
         },
       });
       // Consumed UTXOs at index 14, 15
       expect(ix.accounts[14].role).toBe(AccountRole.WRITABLE);
       expect(ix.accounts[15].role).toBe(AccountRole.WRITABLE);
+      expect(ix.accounts[16].address).toBe(fakeAddress("tc"));
+      expect(ix.accounts[16].role).toBe(AccountRole.WRITABLE);
     });
   });
 
@@ -1112,12 +1118,35 @@ describe("Cross-layer: buildCompleteRedemptionInstructionData (disc=17)", () => 
           poolVault: fakeAddress("vault"),
           completionReceipt: fakeAddress("cr"),
           poolConfig: fakeAddress("pc"),
-          changeUtxo: fakeAddress("change"),
+          tokenConfig: fakeAddress("tc"),
           // consumedUtxos intentionally omitted
         },
       });
-      // Should only have the 14 base accounts
+      // Fixed accounts plus the trailing token config; no change placeholder.
       expect(ix.accounts.length).toBe(14);
+    });
+
+    it("requires a change UTXO when pool_script is present", () => {
+      expect(() => buildCompleteRedemptionInstruction({
+        btcTxid: filledBytes(32, 0xaa),
+        txSize: 225,
+        poolScript: filledBytes(34, 0x77),
+        consumedUtxoCount: 0,
+        accounts: {
+          poolState: fakeAddress("pool"),
+          redemptionRequest: fakeAddress("rr"),
+          authority: fakeAddress("auth"),
+          rentRecipient: fakeAddress("rent"),
+          verifiedTransaction: fakeAddress("vt"),
+          lightClient: fakeAddress("lc"),
+          txBuffer: fakeAddress("buf"),
+          zkbtcMint: fakeAddress("mint"),
+          poolVault: fakeAddress("vault"),
+          completionReceipt: fakeAddress("cr"),
+          poolConfig: fakeAddress("pc"),
+          tokenConfig: fakeAddress("tc"),
+        },
+      })).toThrow("changeUtxo is required when poolScript is non-empty");
     });
 
     it("large tx_size is correctly LE-encoded", () => {

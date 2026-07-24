@@ -260,8 +260,10 @@ export interface CompleteRedemptionInstructionOptions {
     poolVault: Address;
     completionReceipt: Address;
     poolConfig: Address;
-    /** Change UTXO PDA (system program if no change tracking) */
-    changeUtxo: Address;
+    /** Change UTXO PDA. Required when poolScript is non-empty. */
+    changeUtxo?: Address;
+    /** zkBTC TokenConfig PDA (credits protocol revenue) */
+    tokenConfig: Address;
     /** Token program for zkBTC mint (TOKEN_2022_PROGRAM_ID or TOKEN_PROGRAM_ID). Defaults to Token-2022. */
     tokenProgram?: Address;
     /** Consumed UTXO PDAs to close */
@@ -381,7 +383,7 @@ export function buildCompleteRedemptionInstructionData(options: {
 /**
  * Build a complete redemption instruction
  *
- * Accounts (13 base + variable):
+ * Accounts (14 base + optional change + variable consumed UTXOs):
  * 0.  pool_state (writable)
  * 1.  redemption_request (writable)
  * 2.  authority (signer)
@@ -395,8 +397,9 @@ export function buildCompleteRedemptionInstructionData(options: {
  * 10. completion_receipt (writable)
  * 11. system_program (readonly)
  * 12. pool_config (readonly)
- * 13. change_utxo (writable)
- * 14..14+N consumed_utxos (writable)
+ * 13. change_utxo (writable, only when pool_script is non-empty)
+ * 13/14..+N consumed_utxos (writable)
+ * final. token_config (writable)
  */
 export function buildCompleteRedemptionInstruction(
   options: CompleteRedemptionInstructionOptions
@@ -424,8 +427,14 @@ export function buildCompleteRedemptionInstruction(
     { address: options.accounts.completionReceipt, role: AccountRole.WRITABLE },
     { address: SYSTEM_PROGRAM_ADDRESS, role: AccountRole.READONLY },
     { address: options.accounts.poolConfig, role: AccountRole.READONLY },
-    { address: options.accounts.changeUtxo, role: AccountRole.WRITABLE },
   ];
+
+  if (options.poolScript.length > 0) {
+    if (!options.accounts.changeUtxo) {
+      throw new Error("changeUtxo is required when poolScript is non-empty");
+    }
+    accounts.push({ address: options.accounts.changeUtxo, role: AccountRole.WRITABLE });
+  }
 
   // Append consumed UTXO PDAs
   if (options.accounts.consumedUtxos) {
@@ -433,6 +442,8 @@ export function buildCompleteRedemptionInstruction(
       accounts.push({ address: utxo, role: AccountRole.WRITABLE });
     }
   }
+
+  accounts.push({ address: options.accounts.tokenConfig, role: AccountRole.WRITABLE });
 
   return {
     programAddress: config.utxopiaProgramId,
@@ -936,7 +947,7 @@ export interface UnshieldInstructionOptions {
     vault: Address;
     /** Token program for the mint (TOKEN_2022_PROGRAM_ID or TOKEN_PROGRAM_ID). Defaults to Token-2022. */
     tokenProgram?: Address;
-    /** Recipient token accounts (one per public output) */
+    /** Public destination accounts (SPL token accounts, or direct recipients for native SOL) */
     recipientTokenAccounts: Address[];
     /** Nullifier record PDAs (one per input) */
     nullifierRecords: Address[];
@@ -954,7 +965,8 @@ export interface UnshieldInstructionOptions {
  * - stealth_data(n_tree_outputs * 72)
  * - amounts[P] (each u64 LE)
  *
- * Recipients come from accounts array (one token account per public output).
+ * Recipients come from the accounts array. Ordinary SPL outputs use token
+ * accounts; native-SOL outputs use the recipient accounts directly.
  */
 export function buildUnshieldInstructionData(options: {
   nInputs: number;
@@ -1070,7 +1082,7 @@ export function buildUnshieldInstructionData(options: {
  * 5. token_config (writable)
  * 6. vault (writable)
  * 7. token_program (read)
- * 8..8+P recipient_token_accounts (writable, one per public output)
+ * 8..8+P public destinations (SPL token accounts or native-SOL recipients)
  * 8+P..8+P+N nullifier_records (writable)
  */
 export function buildUnshieldInstruction(options: UnshieldInstructionOptions): Instruction {
@@ -1101,7 +1113,7 @@ export function buildUnshieldInstruction(options: UnshieldInstructionOptions): I
     { address: options.accounts.tokenProgram ?? TOKEN_2022_PROGRAM_ID, role: AccountRole.READONLY },
   ];
 
-  // Recipient token accounts (one per public output)
+  // Public destinations (one per public output)
   for (const rta of options.accounts.recipientTokenAccounts) {
     accounts.push({ address: rta, role: AccountRole.WRITABLE });
   }
