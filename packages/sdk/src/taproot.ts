@@ -11,10 +11,9 @@ import { taggedHash, hexToBytes, bytesToHex } from "./crypto";
 import * as bech32 from "bech32";
 import { secp256k1 } from "@noble/curves/secp256k1.js";
 
-// UTXOpia internal key (x-only pubkey)
-// In production, this should be the FROST threshold key
-// Using a test key for demonstration
-const INTERNAL_KEY_HEX =
+// Never use the secp256k1 generator as a custody key. Its discrete log is
+// public, so a key-path output derived from it is sweepable by anyone.
+const UNSAFE_GENERATOR_INTERNAL_KEY_HEX =
   "79be667ef9dcbbac55a06295ce870b07029bfcdb2dce28d959f2815b16f81798"; // secp256k1 generator x-coord
 
 /**
@@ -27,7 +26,7 @@ const INTERNAL_KEY_HEX =
  *
  * @param commitment - 32-byte commitment hash
  * @param network - 'mainnet' | 'testnet' | 'regtest'
- * @param internalKey - Optional custom internal key (x-only, 32 bytes)
+ * @param internalKey - Configured FROST/Ika custody key (x-only, 32 bytes; required)
  * @returns Taproot address (bc1p... or tb1p...)
  */
 export function deriveTaprootAddress(
@@ -39,13 +38,16 @@ export function deriveTaprootAddress(
   outputKey: Uint8Array;
   tweak: Uint8Array;
 } {
-  const key = internalKey || hexToBytes(INTERNAL_KEY_HEX);
+  if (!internalKey) {
+    throw new Error("Internal key is required; pass the configured FROST/Ika x-only key");
+  }
+  const key = internalKey;
   if (key.length !== 32) {
     throw new Error("Internal key must be 32 bytes (x-only)");
   }
   // Refuse the secp256k1 generator x-coord (discrete log = 1): its key-path secret
   // 1+tweak is publicly computable, so any observer could sweep the output.
-  if (bytesToHex(key) === INTERNAL_KEY_HEX) {
+  if (bytesToHex(key) === UNSAFE_GENERATOR_INTERNAL_KEY_HEX) {
     throw new Error("Refusing to derive Taproot with the generator internal key; pass a real FROST/Ika key");
   }
 
@@ -91,7 +93,7 @@ export function deriveTaprootAddress(
  *
  * @param address - Taproot address to verify
  * @param commitment - Expected commitment
- * @param internalKey - Optional internal key
+ * @param internalKey - Configured FROST/Ika custody key (x-only, 32 bytes; required)
  * @returns true if address matches expected derivation
  */
 export function verifyTaprootAddress(

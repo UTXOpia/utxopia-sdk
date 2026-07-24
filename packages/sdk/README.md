@@ -105,11 +105,16 @@ Generate BTC deposit addresses:
 ```typescript
 import { deriveTaprootAddress, verifyTaprootAddress } from '@utxopia/sdk';
 
-// Derive taproot address from commitment
-const address = deriveTaprootAddress(commitment, 'testnet');
+// Use the configured FROST/Ika custody public key; there is no safe default.
+const custodyInternalKey = getConfiguredCustodyInternalKey();
+const { address } = deriveTaprootAddress(
+  commitment,
+  'testnet',
+  custodyInternalKey,
+);
 
 // Verify address matches commitment
-const isValid = verifyTaprootAddress(address, commitment, 'testnet');
+const isValid = verifyTaprootAddress(address, commitment, custodyInternalKey);
 ```
 
 ### Merkle Proofs

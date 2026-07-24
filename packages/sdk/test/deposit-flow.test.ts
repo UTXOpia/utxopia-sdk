@@ -63,13 +63,16 @@ import {
 } from "../src/bound-params";
 
 // Crypto helpers
-import { bytesToBigint } from "../src/crypto";
+import { bytesToBigint, hexToBytes } from "../src/crypto";
 
 // ============================================================================
 // Setup
 // ============================================================================
 
 const TEST_SEED = new Uint8Array(32).fill(0xaa);
+const TEST_CUSTODY_INTERNAL_KEY = hexToBytes(
+  "6c18d9968cc3612708aa5e2a6a10ee7ab57e0cfc6fa6cee7542546c84a00c9d2",
+);
 
 beforeAll(async () => {
   await initPoseidon();
@@ -83,42 +86,61 @@ describe("Taproot address derivation", () => {
   const commitment = new Uint8Array(32).fill(0x01);
   const commitment2 = new Uint8Array(32).fill(0x02);
 
+  test("requires an explicitly configured custody key", () => {
+    expect(() => deriveTaprootAddress(commitment, "testnet")).toThrow(
+      "Internal key is required",
+    );
+  });
+
+  test("rejects the public secp256k1 generator as a custody key", () => {
+    const unsafeGeneratorKey = hexToBytes(
+      "79be667ef9dcbbac55a06295ce870b07029bfcdb2dce28d959f2815b16f81798",
+    );
+    expect(() =>
+      deriveTaprootAddress(commitment, "testnet", unsafeGeneratorKey),
+    ).toThrow("generator internal key");
+  });
+
   test("derives valid tb1p testnet address", () => {
-    const result = deriveTaprootAddress(commitment, "testnet");
+    const result = deriveTaprootAddress(commitment, "testnet", TEST_CUSTODY_INTERNAL_KEY);
     expect(result.address.startsWith("tb1p")).toBe(true);
     expect(result.outputKey.length).toBe(32);
   });
 
   test("derives valid bc1p mainnet address", () => {
-    const result = deriveTaprootAddress(commitment, "mainnet");
+    const result = deriveTaprootAddress(commitment, "mainnet", TEST_CUSTODY_INTERNAL_KEY);
     expect(result.address.startsWith("bc1p")).toBe(true);
   });
 
   test("deterministic for same commitment", () => {
-    const a = deriveTaprootAddress(commitment, "testnet");
-    const b = deriveTaprootAddress(commitment, "testnet");
+    const a = deriveTaprootAddress(commitment, "testnet", TEST_CUSTODY_INTERNAL_KEY);
+    const b = deriveTaprootAddress(commitment, "testnet", TEST_CUSTODY_INTERNAL_KEY);
     expect(a.address).toBe(b.address);
     expect(a.outputKey).toEqual(b.outputKey);
   });
 
   test("different commitments produce different addresses", () => {
-    const a = deriveTaprootAddress(commitment, "testnet");
-    const b = deriveTaprootAddress(commitment2, "testnet");
+    const a = deriveTaprootAddress(commitment, "testnet", TEST_CUSTODY_INTERNAL_KEY);
+    const b = deriveTaprootAddress(commitment2, "testnet", TEST_CUSTODY_INTERNAL_KEY);
     expect(a.address).not.toBe(b.address);
   });
 
   test("verifyTaprootAddress returns true for correct commitment", () => {
-    const { address } = deriveTaprootAddress(commitment, "testnet");
-    expect(verifyTaprootAddress(address, commitment)).toBe(true);
+    const { address } = deriveTaprootAddress(commitment, "testnet", TEST_CUSTODY_INTERNAL_KEY);
+    expect(verifyTaprootAddress(address, commitment, TEST_CUSTODY_INTERNAL_KEY)).toBe(true);
   });
 
   test("verifyTaprootAddress returns false for wrong commitment", () => {
-    const { address } = deriveTaprootAddress(commitment, "testnet");
-    expect(verifyTaprootAddress(address, commitment2)).toBe(false);
+    const { address } = deriveTaprootAddress(commitment, "testnet", TEST_CUSTODY_INTERNAL_KEY);
+    expect(verifyTaprootAddress(address, commitment2, TEST_CUSTODY_INTERNAL_KEY)).toBe(false);
   });
 
   test("P2TR script roundtrip", () => {
-    const { outputKey } = deriveTaprootAddress(commitment, "testnet");
+    const { outputKey } = deriveTaprootAddress(
+      commitment,
+      "testnet",
+      TEST_CUSTODY_INTERNAL_KEY,
+    );
     const script = createP2TRScriptPubkey(outputKey);
     const parsed = parseP2TRScriptPubkey(script);
     expect(parsed).not.toBeNull();
@@ -126,7 +148,7 @@ describe("Taproot address derivation", () => {
   });
 
   test("isValidBitcoinAddress identifies taproot", () => {
-    const { address } = deriveTaprootAddress(commitment, "testnet");
+    const { address } = deriveTaprootAddress(commitment, "testnet", TEST_CUSTODY_INTERNAL_KEY);
     const result = isValidBitcoinAddress(address);
     expect(result.valid).toBe(true);
     expect(result.type).toBe("p2tr");

@@ -69,7 +69,7 @@ import {
 } from "../src/note";
 
 // Crypto helpers
-import { bigintToBytes, bytesToBigint, bytesToHex } from "../src/crypto";
+import { bigintToBytes, bytesToBigint, bytesToHex, hexToBytes } from "../src/crypto";
 
 // ============================================================================
 // Setup
@@ -120,7 +120,11 @@ describe("Demo: Full deposit flow walkthrough", () => {
 
     // 4. Derive taproot deposit address
     const commitment32 = bigintToBytes(mpk);
-    const taproot = deriveTaprootAddress(commitment32, "testnet");
+    const taproot = deriveTaprootAddress(
+      commitment32,
+      "testnet",
+      hexToBytes(DEMO_REGTEST_GROUP_PUBKEY_HEX),
+    );
     log("Taproot address", taproot.address);
     expect(taproot.address).toStartWith("tb1p");
     expect(taproot.outputKey.length).toBe(32);
