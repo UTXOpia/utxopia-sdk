@@ -14,6 +14,14 @@ import {
 
 import { address, getConfig, TOKEN_2022_PROGRAM_ID } from "./config";
 import { type AuditorCiphertextInput, resolveAuditorCiphertext } from "./auditor-ciphertext";
+import {
+  MAGICBLOCK_EPHEMERAL_VAULT_ID,
+  MAGICBLOCK_MAGIC_CONTEXT_ID,
+  MAGICBLOCK_MAGIC_PROGRAM_ID,
+  MAGICBLOCK_MAX_PER_MEMBERS,
+  MAGICBLOCK_PERMISSION_PROGRAM_ID,
+  MAGICBLOCK_PER_MEMBER_FLAGS,
+} from "./magicblock";
 
 /** System program address */
 const SYSTEM_PROGRAM_ADDRESS = address("11111111111111111111111111111111");
@@ -71,6 +79,11 @@ const INSTRUCTION = {
   // Auditor-only setters (28-29) — utxopia program, permissioned pools
   SET_AUDITOR_FROZEN: 28,
   SET_AUDITOR_VIEWING_PUBKEY: 29,
+  // MagicBlock ER/PER lifecycle helpers (32-33)
+  MAGICBLOCK_DELEGATE: 32,
+  MAGICBLOCK_COMMIT: 33,
+  MAGICBLOCK_PER_PERMISSION: 34,
+  ROTATE_AUDITOR: 35,
 } as const;
 
 /**
@@ -223,7 +236,7 @@ export function buildShieldInstruction(options: ShieldInstructionOptions): Instr
     accounts: [
       { address: options.accounts.user, role: AccountRole.WRITABLE_SIGNER },
       { address: options.accounts.userTokenAccount, role: AccountRole.WRITABLE },
-      { address: options.accounts.poolState, role: AccountRole.READONLY },
+      { address: options.accounts.poolState, role: AccountRole.WRITABLE },
       { address: options.accounts.tokenConfig, role: AccountRole.WRITABLE },
       { address: options.accounts.vault, role: AccountRole.WRITABLE },
       { address: options.accounts.commitmentTree, role: AccountRole.WRITABLE },
@@ -566,11 +579,7 @@ export interface TransactInstructionOptions {
   commitmentsOut: Uint8Array[];
   /** Per-output stealth data: ephemeral_pub (32) + encrypted_amount (8) */
   stealthData: Uint8Array[];
-  /**
-   * Optional per-output sender memos (Phase 2): 80 bytes each, layout
-   * `nonce(24) || ciphertext_and_tag(56)` from `encryptSenderMemo`. Pass
-   * via `packSenderMemoForInstruction` or pre-slice manually.
-   */
+  /** Reserved. Sender memos are rejected until they are proof-bound. */
   senderMemos?: Uint8Array[];
   /** Account addresses */
   accounts: {
@@ -610,13 +619,7 @@ export function buildTransactInstructionData(options: {
   stealthData: Uint8Array[];
   /** 0=inline proof (default), 1=proof in separate ChadBuffer account */
   proofSource?: 0 | 1;
-  /**
-   * Optional Phase 2 sender memos — one per output. Each entry is 80 bytes:
-   * `nonce(24) || ciphertext_and_tag(56)` from `encryptSenderMemo`. When
-   * supplied, the program emits an EVENT_SENDER_MEMO for each output so the
-   * sender can later reconstruct their outgoing history with `ovk`. Omit to
-   * skip the channel entirely.
-   */
+  /** Reserved. Sender memos are rejected until they are proof-bound. */
   senderMemos?: Uint8Array[];
 }): Uint8Array {
   const { nInputs, nOutputs, proofBytes, merkleRoot, boundParamsHash, nullifiers, commitmentsOut, stealthData, senderMemos } = options;
@@ -636,26 +639,13 @@ export function buildTransactInstructionData(options: {
   }
   assertStealthDataRecordLengths(stealthData);
 
-  const SENDER_MEMO_PER_OUTPUT = 80; // nonce(24) + ciphertext_and_tag(56)
-
-  const hasSenderMemos = senderMemos != null;
-  if (hasSenderMemos) {
-    if (senderMemos!.length !== nOutputs) {
-      throw new Error(`Expected ${nOutputs} sender memo entries, got ${senderMemos!.length}`);
-    }
-    for (let i = 0; i < senderMemos!.length; i++) {
-      if (senderMemos![i].length !== SENDER_MEMO_PER_OUTPUT) {
-        throw new Error(
-          `Sender memo ${i} must be ${SENDER_MEMO_PER_OUTPUT} bytes; got ${senderMemos![i].length}`,
-        );
-      }
-    }
+  if (senderMemos != null) {
+    throw new Error("senderMemos are disabled until a proof-bound protocol version is available");
   }
 
   const proofSize = proofSource === 0 ? 256 : 0;
-  const senderMemosSize = hasSenderMemos ? nOutputs * SENDER_MEMO_PER_OUTPUT : 0;
   const totalSize =
-    1 + 4 + proofSize + 32 + 32 + nInputs * 32 + nOutputs * 32 + nOutputs * STEALTH_DATA_PER_OUTPUT + senderMemosSize;
+    1 + 4 + proofSize + 32 + 32 + nInputs * 32 + nOutputs * 32 + nOutputs * STEALTH_DATA_PER_OUTPUT;
   const data = new Uint8Array(totalSize);
 
   let offset = 0;
@@ -699,14 +689,6 @@ export function buildTransactInstructionData(options: {
   for (const sd of stealthData) {
     data.set(sd, offset);
     offset += STEALTH_DATA_PER_OUTPUT;
-  }
-
-  // Optional sender memos (Phase 2): nonce(24) + ciphertext_and_tag(56) per output
-  if (hasSenderMemos) {
-    for (const memo of senderMemos!) {
-      data.set(memo, offset);
-      offset += SENDER_MEMO_PER_OUTPUT;
-    }
   }
 
   return data;
@@ -1103,7 +1085,7 @@ export function buildUnshieldInstruction(options: UnshieldInstructionOptions): I
   });
 
   const accounts: Instruction["accounts"] = [
-    { address: options.accounts.poolState, role: AccountRole.READONLY },
+    { address: options.accounts.poolState, role: AccountRole.WRITABLE },
     { address: options.accounts.commitmentTree, role: AccountRole.WRITABLE },
     { address: options.accounts.vkRegistry, role: AccountRole.READONLY },
     { address: options.accounts.user, role: AccountRole.WRITABLE_SIGNER },
@@ -1326,6 +1308,274 @@ export function buildRotateTreeInstruction(options: RotateTreeOptions): Instruct
       { address: options.accounts.systemProgram, role: AccountRole.READONLY },
     ],
     data: buildRotateTreeInstructionData(),
+  };
+}
+
+export type MagicBlockDelegateTarget = "poolState" | "commitmentTree";
+
+export interface MagicBlockDelegateInstructionOptions {
+  accounts: {
+    payer: Address;
+    authority: Address;
+    poolState: Address;
+    delegatedAccount: Address;
+    ownerProgram?: Address;
+    buffer: Address;
+    delegationRecord: Address;
+    delegationMetadata: Address;
+    systemProgram?: Address;
+  };
+  target: MagicBlockDelegateTarget;
+  commitFrequencyMs: number;
+  validator?: Address;
+}
+
+export interface MagicBlockCommitInstructionOptions {
+  accounts: {
+    payer: Address;
+    /** Required for undelegation. Commit-only callers may omit it. */
+    authority?: Address;
+    magicContext?: Address;
+    magicProgram?: Address;
+    poolState: Address;
+    commitmentTree: Address;
+    nullifierAccounts: Address[];
+  };
+  nullifierHashes: Uint8Array[];
+  allowUndelegation?: boolean;
+}
+
+export type MagicBlockPerPermissionOperation = "create" | "update" | "close";
+
+export interface MagicBlockPerPermissionMember {
+  address: Address;
+  flags: number;
+}
+
+export interface MagicBlockPerPermissionInstructionOptions {
+  operation: MagicBlockPerPermissionOperation;
+  target: MagicBlockDelegateTarget;
+  members?: MagicBlockPerPermissionMember[];
+  accounts: {
+    authority: Address;
+    poolState: Address;
+    permissionedAccount: Address;
+    permission: Address;
+    ephemeralVault?: Address;
+    magicProgram?: Address;
+    permissionProgram?: Address;
+  };
+}
+
+function magicBlockDelegateTargetByte(target: MagicBlockDelegateTarget): number {
+  if (target === "poolState") return 0;
+  if (target === "commitmentTree") return 1;
+  throw new Error(`Unsupported MagicBlock delegate target: ${target}`);
+}
+
+/**
+ * Build magicblock_delegate instruction data (disc=32).
+ */
+export function buildMagicBlockDelegateInstructionData(options: {
+  target: MagicBlockDelegateTarget;
+  commitFrequencyMs: number;
+  validator?: Address;
+}): Uint8Array {
+  if (!Number.isInteger(options.commitFrequencyMs) || options.commitFrequencyMs < 0) {
+    throw new Error("commitFrequencyMs must be a non-negative u32");
+  }
+  if (options.commitFrequencyMs > 0xffffffff) {
+    throw new Error("commitFrequencyMs must fit in u32");
+  }
+
+  const data = new Uint8Array(options.validator ? 38 : 6);
+  const view = new DataView(data.buffer);
+  data[0] = INSTRUCTION.MAGICBLOCK_DELEGATE;
+  data[1] = magicBlockDelegateTargetByte(options.target);
+  view.setUint32(2, options.commitFrequencyMs, true);
+  if (options.validator) {
+    data.set(addressToBytes(options.validator), 6);
+  }
+  return data;
+}
+
+/**
+ * Build a complete magicblock_delegate instruction.
+ */
+export function buildMagicBlockDelegateInstruction(
+  options: MagicBlockDelegateInstructionOptions
+): Instruction {
+  const config = getConfig();
+
+  return {
+    programAddress: config.utxopiaProgramId,
+    accounts: [
+      { address: options.accounts.payer, role: AccountRole.WRITABLE_SIGNER },
+      { address: options.accounts.authority, role: AccountRole.READONLY_SIGNER },
+      { address: options.accounts.poolState, role: AccountRole.READONLY },
+      { address: options.accounts.delegatedAccount, role: AccountRole.WRITABLE },
+      {
+        address: options.accounts.ownerProgram ?? config.utxopiaProgramId,
+        role: AccountRole.READONLY,
+      },
+      { address: options.accounts.buffer, role: AccountRole.WRITABLE },
+      { address: options.accounts.delegationRecord, role: AccountRole.WRITABLE },
+      { address: options.accounts.delegationMetadata, role: AccountRole.WRITABLE },
+      { address: options.accounts.systemProgram ?? SYSTEM_PROGRAM_ADDRESS, role: AccountRole.READONLY },
+    ],
+    data: buildMagicBlockDelegateInstructionData({
+      target: options.target,
+      commitFrequencyMs: options.commitFrequencyMs,
+      validator: options.validator,
+    }),
+  };
+}
+
+/**
+ * Build magicblock_commit instruction data (disc=33).
+ */
+export function buildMagicBlockCommitInstructionData(options: {
+  nullifierHashes: Uint8Array[];
+  allowUndelegation?: boolean;
+}): Uint8Array {
+  if (
+    options.nullifierHashes.length === 0 ||
+    options.nullifierHashes.length > 10
+  ) {
+    throw new Error("MagicBlock commits require 1-10 nullifier hashes");
+  }
+  for (const hash of options.nullifierHashes) {
+    if (hash.length !== 32) {
+      throw new Error("Each MagicBlock commit nullifier hash must be 32 bytes");
+    }
+  }
+  const data = new Uint8Array(4 + options.nullifierHashes.length * 32);
+  data[0] = INSTRUCTION.MAGICBLOCK_COMMIT;
+  data[1] = 1;
+  data[2] = options.allowUndelegation ? 1 : 0;
+  data[3] = options.nullifierHashes.length;
+  options.nullifierHashes.forEach((hash, index) => data.set(hash, 4 + index * 32));
+  return data;
+}
+
+/**
+ * Build a complete magicblock_commit instruction.
+ */
+export function buildMagicBlockCommitInstruction(
+  options: MagicBlockCommitInstructionOptions
+): Instruction {
+  const config = getConfig();
+  if (
+    options.accounts.nullifierAccounts.length !== options.nullifierHashes.length
+  ) {
+    throw new Error("Nullifier account and hash counts must match");
+  }
+
+  const accounts = [
+    { address: options.accounts.payer, role: AccountRole.READONLY_SIGNER },
+    {
+      address: options.accounts.authority ?? options.accounts.payer,
+      role: AccountRole.READONLY_SIGNER,
+    },
+    {
+      address: options.accounts.magicContext ?? MAGICBLOCK_MAGIC_CONTEXT_ID,
+      role: AccountRole.WRITABLE,
+    },
+    { address: options.accounts.magicProgram ?? MAGICBLOCK_MAGIC_PROGRAM_ID, role: AccountRole.READONLY },
+    { address: options.accounts.poolState, role: AccountRole.WRITABLE },
+    { address: options.accounts.commitmentTree, role: AccountRole.WRITABLE },
+  ];
+
+  for (const nullifier of options.accounts.nullifierAccounts) {
+    accounts.push({ address: nullifier, role: AccountRole.WRITABLE });
+  }
+
+  return {
+    programAddress: config.utxopiaProgramId,
+    accounts,
+    data: buildMagicBlockCommitInstructionData({
+      nullifierHashes: options.nullifierHashes,
+      allowUndelegation: options.allowUndelegation,
+    }),
+  };
+}
+
+function magicBlockPerOperationByte(operation: MagicBlockPerPermissionOperation): number {
+  if (operation === "create") return 0;
+  if (operation === "update") return 1;
+  if (operation === "close") return 2;
+  throw new Error(`Unsupported MagicBlock PER operation: ${operation}`);
+}
+
+export function buildMagicBlockPerPermissionInstructionData(options: {
+  operation: MagicBlockPerPermissionOperation;
+  target: MagicBlockDelegateTarget;
+  members?: MagicBlockPerPermissionMember[];
+}): Uint8Array {
+  const members = options.members ?? [];
+  if (options.operation === "close") {
+    if (members.length !== 0) {
+      throw new Error("Closing a MagicBlock PER permission does not accept members");
+    }
+  } else {
+    if (members.length === 0 || members.length > MAGICBLOCK_MAX_PER_MEMBERS) {
+      throw new Error(
+        `MagicBlock PER permissions require 1-${MAGICBLOCK_MAX_PER_MEMBERS} members`
+      );
+    }
+    if (!members.some((member) => (member.flags & MAGICBLOCK_PER_MEMBER_FLAGS.authority) !== 0)) {
+      throw new Error("MagicBlock PER permissions must retain an authority member");
+    }
+  }
+
+  const allowedFlags = Object.values(MAGICBLOCK_PER_MEMBER_FLAGS).reduce(
+    (combined, flag) => combined | flag,
+    0
+  );
+  const data = new Uint8Array(4 + members.length * 33);
+  data[0] = INSTRUCTION.MAGICBLOCK_PER_PERMISSION;
+  data[1] = magicBlockPerOperationByte(options.operation);
+  data[2] = magicBlockDelegateTargetByte(options.target);
+  data[3] = members.length;
+  members.forEach((member, index) => {
+    if (!Number.isInteger(member.flags) || member.flags < 0 || member.flags > 0xff) {
+      throw new Error("MagicBlock PER member flags must fit in u8");
+    }
+    if ((member.flags & ~allowedFlags) !== 0) {
+      throw new Error("MagicBlock PER member flags contain unsupported bits");
+    }
+    const offset = 4 + index * 33;
+    data[offset] = member.flags;
+    data.set(addressToBytes(member.address), offset + 1);
+  });
+  return data;
+}
+
+export function buildMagicBlockPerPermissionInstruction(
+  options: MagicBlockPerPermissionInstructionOptions
+): Instruction {
+  const config = getConfig();
+  return {
+    programAddress: config.utxopiaProgramId,
+    accounts: [
+      { address: options.accounts.authority, role: AccountRole.READONLY_SIGNER },
+      { address: options.accounts.poolState, role: AccountRole.READONLY },
+      { address: options.accounts.permissionedAccount, role: AccountRole.WRITABLE },
+      { address: options.accounts.permission, role: AccountRole.WRITABLE },
+      {
+        address: options.accounts.ephemeralVault ?? MAGICBLOCK_EPHEMERAL_VAULT_ID,
+        role: AccountRole.WRITABLE,
+      },
+      {
+        address: options.accounts.magicProgram ?? MAGICBLOCK_MAGIC_PROGRAM_ID,
+        role: AccountRole.READONLY,
+      },
+      {
+        address: options.accounts.permissionProgram ?? MAGICBLOCK_PERMISSION_PROGRAM_ID,
+        role: AccountRole.READONLY,
+      },
+    ],
+    data: buildMagicBlockPerPermissionInstructionData(options),
   };
 }
 
@@ -1934,7 +2184,7 @@ export function buildShieldPermissionedInstructionData(options: {
  * Accounts:
  * 0. user              (writable signer)
  * 1. user_token_account(writable)
- * 2. pool_state        (readonly)
+ * 2. pool_state        (writable)
  * 3. token_config      (writable)
  * 4. vault             (writable)
  * 5. commitment_tree   (writable)
@@ -1957,7 +2207,7 @@ export function buildShieldPermissionedInstruction(
     accounts: [
       { address: options.accounts.user,             role: AccountRole.WRITABLE_SIGNER },
       { address: options.accounts.userTokenAccount, role: AccountRole.WRITABLE },
-      { address: options.accounts.poolState,        role: AccountRole.READONLY },
+      { address: options.accounts.poolState,        role: AccountRole.WRITABLE },
       { address: options.accounts.tokenConfig,      role: AccountRole.WRITABLE },
       { address: options.accounts.vault,            role: AccountRole.WRITABLE },
       { address: options.accounts.commitmentTree,   role: AccountRole.WRITABLE },
@@ -2062,5 +2312,47 @@ export function buildSetAuditorViewingPubkeyInstruction(
       { address: options.accounts.auditor,   role: AccountRole.READONLY_SIGNER },
     ],
     data: buildSetAuditorViewingPubkeyInstructionData(options.viewingPubkey),
+  };
+}
+
+// ---------------------------------------------------------------------------
+// rotateAuditor (disc=35)
+// ---------------------------------------------------------------------------
+
+export interface RotateAuditorOptions {
+  auditor: Uint8Array;
+  viewingPubkey: Uint8Array;
+  accounts: {
+    poolState: Address;
+    authority: Address;
+  };
+}
+
+export function buildRotateAuditorInstructionData(
+  auditor: Uint8Array,
+  viewingPubkey: Uint8Array,
+): Uint8Array {
+  if (auditor.length !== 32 || auditor.every((byte) => byte === 0)) {
+    throw new Error("auditor must be a nonzero 32-byte public key");
+  }
+  if (viewingPubkey.length !== 32 || viewingPubkey.every((byte) => byte === 0)) {
+    throw new Error("viewingPubkey must be a nonzero 32-byte public key");
+  }
+  const data = new Uint8Array(65);
+  data[0] = INSTRUCTION.ROTATE_AUDITOR;
+  data.set(auditor, 1);
+  data.set(viewingPubkey, 33);
+  return data;
+}
+
+export function buildRotateAuditorInstruction(options: RotateAuditorOptions): Instruction {
+  const config = getConfig();
+  return {
+    programAddress: config.utxopiaProgramId,
+    accounts: [
+      { address: options.accounts.poolState, role: AccountRole.WRITABLE },
+      { address: options.accounts.authority, role: AccountRole.READONLY_SIGNER },
+    ],
+    data: buildRotateAuditorInstructionData(options.auditor, options.viewingPubkey),
   };
 }

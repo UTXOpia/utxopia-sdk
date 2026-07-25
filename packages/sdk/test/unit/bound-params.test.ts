@@ -2,6 +2,8 @@ import { describe, it, expect } from "bun:test";
 import { sha256 } from "@noble/hashes/sha2.js";
 import {
   computeBoundParamsHash,
+  computeSolanaDomainBoundParamsHash,
+  computeSolanaDomainSeparator,
   computeStealthDataHash,
   createTransferBoundParams,
   createUnshieldBoundParams,
@@ -184,6 +186,84 @@ describe("boundParamsHash cross-language parity", () => {
       createRedeemBoundParams([script1, script2], ZERO_STEALTH, REQ, CHAIN_ID)
     );
     expect(singleHash).not.toBe(multiHash);
+  });
+});
+
+describe("Solana privacy-domain binding", () => {
+  const PROGRAM = new Uint8Array(32).fill(0x11);
+  const POOL = new Uint8Array(32).fill(0x22);
+  const PARAMS = createTransferBoundParams(new Uint8Array(32), 103n);
+
+  it("binds the existing public input to public versus institution", () => {
+    const publicContext = { programId: PROGRAM, poolState: POOL, kind: "public" } as const;
+    const institutionContext = {
+      programId: PROGRAM,
+      poolState: POOL,
+      kind: "institution",
+    } as const;
+
+    expect(computeSolanaDomainSeparator(publicContext)).not.toBe(
+      computeSolanaDomainSeparator(institutionContext),
+    );
+    expect(computeSolanaDomainBoundParamsHash(PARAMS, publicContext)).not.toBe(
+      computeSolanaDomainBoundParamsHash(PARAMS, institutionContext),
+    );
+  });
+
+  it("changes when the program or pool identity changes", () => {
+    const base = { programId: PROGRAM, poolState: POOL, kind: "public" } as const;
+    const otherProgram = {
+      ...base,
+      programId: new Uint8Array(32).fill(0x33),
+    };
+    const otherPool = {
+      ...base,
+      poolState: new Uint8Array(32).fill(0x44),
+    };
+    const hash = computeSolanaDomainBoundParamsHash(PARAMS, base);
+    expect(computeSolanaDomainBoundParamsHash(PARAMS, otherProgram)).not.toBe(hash);
+    expect(computeSolanaDomainBoundParamsHash(PARAMS, otherPool)).not.toBe(hash);
+  });
+
+  it("matches the Rust public-domain vector", () => {
+    const context = { programId: PROGRAM, poolState: POOL, kind: "public" } as const;
+    const separator = bigintTo32Bytes(computeSolanaDomainSeparator(context));
+    const bound = bigintTo32Bytes(computeSolanaDomainBoundParamsHash(PARAMS, context));
+    const hex = (bytes: Uint8Array) =>
+      Array.from(bytes).map((b) => b.toString(16).padStart(2, "0")).join("");
+
+    expect(hex(separator)).toBe("2b76ed47e643d671f5c01988008f8d4012b8abcb14fc937562a56bc957467696");
+    expect(hex(bound)).toBe("1f8e124663a84237000a031cbc25f4721756dab3f43d10e78a4ebac49d0c7fdb");
+  });
+
+  it("rejects malformed addresses and non-Solana chain IDs", () => {
+    expect(() => computeSolanaDomainSeparator({
+      programId: new Uint8Array(31),
+      poolState: POOL,
+      kind: "public",
+    })).toThrow("programId must be 32 bytes");
+    expect(() => computeSolanaDomainBoundParamsHash(
+      createTransferBoundParams(new Uint8Array(32), 999n),
+      { programId: PROGRAM, poolState: POOL, kind: "public" },
+    )).toThrow("supported Solana chain ID");
+    expect(() => computeSolanaDomainSeparator({
+      programId: PROGRAM,
+      poolState: POOL,
+      kind: "partner" as "public",
+    })).toThrow("kind must be public or institution");
+  });
+
+  it("supports distinct mainnet and devnet domain IDs", () => {
+    const context = { programId: PROGRAM, poolState: POOL, kind: "public" } as const;
+    const devnet = computeSolanaDomainBoundParamsHash(
+      createTransferBoundParams(new Uint8Array(32), 103n),
+      context,
+    );
+    const mainnet = computeSolanaDomainBoundParamsHash(
+      createTransferBoundParams(new Uint8Array(32), 101n),
+      context,
+    );
+    expect(mainnet).not.toBe(devnet);
   });
 });
 

@@ -1,17 +1,21 @@
 /**
  * Bound Parameters Hash for JoinSplit transactions
  *
- * The boundParamsHash binds transaction metadata to the proof:
+ * The operation hash binds transaction metadata to the proof:
  * - treeNumber: Which commitment tree (for multi-tree support)
  * - unshieldAddress: Recipient for public unshield (null = private transfer)
  * - chainId: Prevents cross-chain replay
  * - stealthDataHash: SHA256 of concatenated stealth data (prevents relayer tampering)
  *
  * Hash: SHA256(serialize(params)) mod BN254_SCALAR_FIELD
+ *
+ * Solana callers must wrap this operation hash with
+ * `computeSolanaDomainBoundParamsHash()` before generating a proof.
  */
 
 import { sha256 } from "@noble/hashes/sha2.js";
 import { BN254_FIELD_PRIME, bytesToBigint } from "./crypto";
+import { poseidonHashSync } from "./poseidon";
 
 /** Bound params mode: transfer(0), unshield(1), redeem(2) */
 export type BoundParamsMode = 'transfer' | 'unshield' | 'redeem';
@@ -35,6 +39,87 @@ export interface BoundParams {
   requester?: Uint8Array;
 }
 
+export type SolanaPrivacyDomainKind = "public" | "institution";
+
+export interface SolanaPrivacyDomainContext {
+  programId: Uint8Array;
+  poolState: Uint8Array;
+  kind: SolanaPrivacyDomainKind;
+}
+
+const SOLANA_DOMAIN_TAG = new TextEncoder().encode("UTXOPIA_DOMAIN_V1");
+
+function assert32Bytes(value: Uint8Array, name: string): void {
+  if (value.length !== 32) {
+    throw new Error(`${name} must be 32 bytes`);
+  }
+}
+
+function u64le(value: bigint): Uint8Array {
+  if (value < 0n || value > 0xffffffffffffffffn) {
+    throw new Error("chainId must fit in u64");
+  }
+  const bytes = new Uint8Array(8);
+  let remaining = value;
+  for (let i = 0; i < bytes.length; i++) {
+    bytes[i] = Number(remaining & 0xffn);
+    remaining >>= 8n;
+  }
+  return bytes;
+}
+
+/**
+ * Compute the canonical public/institution domain field for Solana.
+ *
+ * SHA256("UTXOPIA_DOMAIN_V1" || chainIdLE || programId || poolState || kind)
+ * reduced modulo BN254 Fr. The on-chain verifier recomputes this from the
+ * actual program, pool account, and PoolState.permissioned flag.
+ */
+export function computeSolanaDomainSeparator(
+  context: SolanaPrivacyDomainContext,
+  chainId: bigint = SOLANA_BOUND_CHAIN_ID,
+): bigint {
+  assert32Bytes(context.programId, "programId");
+  assert32Bytes(context.poolState, "poolState");
+  if (context.kind !== "public" && context.kind !== "institution") {
+    throw new Error("kind must be public or institution");
+  }
+  const preimage = new Uint8Array(SOLANA_DOMAIN_TAG.length + 8 + 32 + 32 + 1);
+  let offset = 0;
+  preimage.set(SOLANA_DOMAIN_TAG, offset);
+  offset += SOLANA_DOMAIN_TAG.length;
+  preimage.set(u64le(chainId), offset);
+  offset += 8;
+  preimage.set(context.programId, offset);
+  offset += 32;
+  preimage.set(context.poolState, offset);
+  offset += 32;
+  preimage[offset] = context.kind === "institution" ? 1 : 0;
+  return bytesToBigint(sha256(preimage)) % BN254_FIELD_PRIME;
+}
+
+/**
+ * Bind an operation-specific hash to its exact Solana privacy domain.
+ *
+ * This occupies the existing boundParamsHash public input, so circuit/VK
+ * dimensions remain unchanged while proofs become non-replayable across pools.
+ */
+export function computeSolanaDomainBoundParamsHash(
+  params: BoundParams,
+  context: SolanaPrivacyDomainContext,
+): bigint {
+  if (
+    params.chainId !== SOLANA_DEVNET_BOUND_CHAIN_ID
+    && params.chainId !== SOLANA_MAINNET_BOUND_CHAIN_ID
+  ) {
+    throw new Error("Solana domain binding requires a supported Solana chain ID");
+  }
+  return poseidonHashSync([
+    computeSolanaDomainSeparator(context, params.chainId),
+    computeBoundParamsHash(params),
+  ]);
+}
+
 /**
  * Compute SHA256 hash of concatenated stealth data arrays.
  * Returns 32-byte hash, or all zeros if no stealth data.
@@ -53,7 +138,10 @@ export function computeStealthDataHash(stealthData: Uint8Array[]): Uint8Array {
 }
 
 /**
- * Compute the bound parameters hash
+ * Compute the operation-specific bound parameters hash.
+ *
+ * This is the final public input for Sui. Solana callers must use
+ * `computeSolanaDomainBoundParamsHash()` to bind the program and pool.
  *
  * Deterministic serialization:
  * - treeNumber: 4 bytes LE
@@ -115,7 +203,10 @@ export function computeBoundParamsHash(params: BoundParams): bigint {
 }
 
 /** Canonical chain ids folded into bound-params hashes (must match on-chain). */
-export const SOLANA_BOUND_CHAIN_ID = 103n;
+export const SOLANA_MAINNET_BOUND_CHAIN_ID = 101n;
+export const SOLANA_DEVNET_BOUND_CHAIN_ID = 103n;
+/** Backward-compatible devnet alias. Prefer the network-specific constants. */
+export const SOLANA_BOUND_CHAIN_ID = SOLANA_DEVNET_BOUND_CHAIN_ID;
 export const SUI_BOUND_CHAIN_ID = 784n;
 
 /**
@@ -216,8 +307,8 @@ export function createSuiUnshieldBoundParams(
 // different partitioning of the same concatenated bytes. These helpers reproduce that exact
 // encoding and MUST stay byte-identical to the Move side (locked by tests in both languages).
 //
-// NOTE: this is Sui-only. The Solana program + the generic `computeBoundParamsHash` /
-// `computeStealthDataHash` / `create*BoundParams` helpers keep the flat-concat encoding.
+// NOTE: this is Sui-only. Solana uses flat-concat operation hashes, then wraps the result with
+// `computeSolanaDomainBoundParamsHash` to bind the exact program and pool.
 // ---------------------------------------------------------------------------
 
 function u32le(n: number): Uint8Array {
