@@ -215,6 +215,45 @@ export {
 } from "./token-registry";
 
 // ==========================================================================
+// MagicBlock ER / PER execution domains
+// ==========================================================================
+
+export {
+  MAGICBLOCK_DELEGATION_PROGRAM_ID,
+  MAGICBLOCK_DEVNET_ROUTER_URL,
+  MAGICBLOCK_DEVNET_ROUTER_WS_URL,
+  MAGICBLOCK_EPHEMERAL_VAULT_ID,
+  MAGICBLOCK_MAGIC_CONTEXT_ID,
+  MAGICBLOCK_MAGIC_PROGRAM_ID,
+  MAGICBLOCK_MAX_PER_MEMBERS,
+  MAGICBLOCK_PERMISSION_PROGRAM_ID,
+  MAGICBLOCK_PER_MEMBER_FLAGS,
+  MAGICBLOCK_VALIDATOR_IDENTITIES,
+  buildDefaultPrivacyDomain,
+  buildMagicBlockPerMemberFlags,
+  deriveMagicBlockCommitRecordPda,
+  deriveMagicBlockCommitStatePda,
+  deriveMagicBlockDelegateBufferPda,
+  deriveMagicBlockDelegationMetadataPda,
+  deriveMagicBlockDelegationRecordPda,
+  deriveMagicBlockPermissionPda,
+  deriveMagicBlockUndelegateBufferPda,
+  requiresMagicBlockEndpoint,
+  getMagicBlockEndpoint,
+  getMagicBlockValidatorIdentity,
+  assertMagicBlockRouteReady,
+  assertDomainExecutionPolicy,
+  createMagicBlockRouterConnection,
+  type BuildPrivacyDomainOptions,
+  type MagicBlockEndpointConfig,
+  type MagicBlockExecutionMode,
+  type MagicBlockPerMemberFlagName,
+  type MagicBlockValidatorRegion,
+  type PrivacyDomainConfig,
+  type PrivacyDomainKind,
+} from "./magicblock";
+
+// ==========================================================================
 // Note (shielded commitment) utilities
 // ==========================================================================
 
@@ -366,6 +405,8 @@ export {
 
 export {
   computeBoundParamsHash,
+  computeSolanaDomainBoundParamsHash,
+  computeSolanaDomainSeparator,
   computeStealthDataHash,
   createTransferBoundParams,
   createUnshieldBoundParams,
@@ -377,10 +418,14 @@ export {
   computeSuiUnshieldBoundParamsHash,
   computeSuiRedeemBoundParamsHash,
   SOLANA_BOUND_CHAIN_ID,
+  SOLANA_DEVNET_BOUND_CHAIN_ID,
+  SOLANA_MAINNET_BOUND_CHAIN_ID,
   SUI_BOUND_CHAIN_ID,
   DEFAULT_BOUND_PARAMS,
   type BoundParams,
   type BoundParamsMode,
+  type SolanaPrivacyDomainContext,
+  type SolanaPrivacyDomainKind,
 } from "./bound-params";
 
 // ==========================================================================
@@ -631,6 +676,22 @@ export {
   buildRotateTreeInstructionData,
   buildRotateTreeInstruction,
   type RotateTreeOptions,
+  // MagicBlock lifecycle
+  buildMagicBlockDelegateInstructionData,
+  buildMagicBlockDelegateInstruction,
+  buildMagicBlockCommitInstructionData,
+  buildMagicBlockCommitInstruction,
+  buildMagicBlockPerPermissionInstructionData,
+  buildMagicBlockPerPermissionInstruction,
+  buildRotateAuditorInstructionData,
+  buildRotateAuditorInstruction,
+  type MagicBlockDelegateTarget,
+  type MagicBlockDelegateInstructionOptions,
+  type MagicBlockCommitInstructionOptions,
+  type MagicBlockPerPermissionOperation,
+  type MagicBlockPerPermissionMember,
+  type MagicBlockPerPermissionInstructionOptions,
+  type RotateAuditorOptions,
   // Verify instruction data builders
   buildVerifyTransactionInstructionData,
   buildCompleteDepositInstructionData,

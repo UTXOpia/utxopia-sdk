@@ -134,7 +134,8 @@ import {
   computeJoinSplitNullifierSync,    // Nullifier
 
   // === Bound Parameters ===
-  computeBoundParamsHash,           // Hash transaction binding params
+  computeBoundParamsHash,           // Sui final hash / Solana operation hash
+  computeSolanaDomainBoundParamsHash, // Required final public input for Solana proofs
 
   // === Stealth & Scanning ===
   createStealthDeposit,             // Create stealth deposit (interactive)
@@ -329,7 +330,21 @@ Current BTC deposits use `createNonInteractiveDeposit`, because the verifier exp
 ### 4. JoinSplit Transfer
 
 ```typescript
-import { generateJoinSplitProof, buildTransactInstruction } from '@utxopia/sdk';
+import {
+  computeSolanaDomainBoundParamsHash,
+  createTransferBoundParams,
+  generateJoinSplitProof,
+  buildTransactInstruction,
+} from '@utxopia/sdk';
+
+const boundHash = computeSolanaDomainBoundParamsHash(
+  createTransferBoundParams(stealthDataHash, 103n),
+  {
+    programId: utxopiaProgramId.toBytes(),
+    poolState: poolStatePda.toBytes(),
+    kind: 'public', // or 'institution'; must match PoolState.permissioned
+  },
+);
 
 // Generate proof (1 input → 2 outputs split)
 const proof = await generateJoinSplitProof({

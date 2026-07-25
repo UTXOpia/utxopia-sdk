@@ -35,6 +35,7 @@ import {
   buildCompleteRedemptionInstruction,
   buildCancelRedemptionInstructionData,
   buildCancelRedemptionInstruction,
+  buildRotateAuditorInstructionData,
 } from "../../src/instructions";
 
 // =============================================================================
@@ -54,6 +55,7 @@ const DISC_REDEEM = 15;
 const DISC_RESERVED_REQUEST_REDEMPTION = 16;
 const DISC_COMPLETE_REDEMPTION = 17;
 const DISC_CANCEL_REDEMPTION = 19;
+const DISC_ROTATE_AUDITOR = 35;
 
 // =============================================================================
 // Helpers
@@ -166,6 +168,20 @@ describe("Cross-layer: buildTransactInstructionData (disc=13)", () => {
         expect(data.length).toBe(expected);
       }
     });
+  });
+
+  it("rejects sender memos until they are proof-bound", () => {
+    expect(() => buildTransactInstructionData({
+      nInputs: 1,
+      nOutputs: 1,
+      proofBytes: fakeProof(),
+      merkleRoot: filledBytes(32, 1),
+      boundParamsHash: filledBytes(32, 2),
+      nullifiers: [filledBytes(32, 3)],
+      commitmentsOut: [filledBytes(32, 4)],
+      stealthData: [fakeStealth(0)],
+      senderMemos: [filledBytes(80, 5)],
+    })).toThrow("disabled until a proof-bound protocol version");
   });
 
   describe("field offsets match Rust parsing", () => {
@@ -406,6 +422,24 @@ describe("Cross-layer: buildTransactInstructionData (disc=13)", () => {
   });
 });
 
+describe("Cross-layer: rotate auditor (disc=35)", () => {
+  it("encodes auditor and viewing keys atomically", () => {
+    const auditor = filledBytes(32, 0xaa);
+    const viewing = filledBytes(32, 0xbb);
+    const data = buildRotateAuditorInstructionData(auditor, viewing);
+    expect(data.length).toBe(65);
+    expect(data[0]).toBe(DISC_ROTATE_AUDITOR);
+    expect(data.slice(1, 33)).toEqual(auditor);
+    expect(data.slice(33)).toEqual(viewing);
+  });
+
+  it("rejects zero keys", () => {
+    expect(() =>
+      buildRotateAuditorInstructionData(new Uint8Array(32), filledBytes(32, 1))
+    ).toThrow("nonzero");
+  });
+});
+
 // =============================================================================
 // UNSHIELD (disc 14) — contracts/programs/utxopia/src/instructions/unshield.rs
 // =============================================================================
@@ -606,7 +640,7 @@ describe("Cross-layer: buildUnshieldInstructionData (disc=14)", () => {
       expect(ix.accounts.length).toBe(11);
     });
 
-    it("account order matches Rust: pool(r), tree(w), vk(r), user(ws), sys(r), tc(w), vault(w), token(r), recipients(w), nullifiers(w)", () => {
+    it("account order matches Rust: pool(w), tree(w), vk(r), user(ws), sys(r), tc(w), vault(w), token(r), recipients(w), nullifiers(w)", () => {
       const ix = buildUnshieldInstruction({
         nInputs: 1, nOutputs: 2,
         proofBytes: fakeProof(),
@@ -627,7 +661,7 @@ describe("Cross-layer: buildUnshieldInstructionData (disc=14)", () => {
           nullifierRecords: [fakeAddress("nr0")],
         },
       });
-      expect(ix.accounts[0].role).toBe(AccountRole.READONLY);           // pool_state (read in unshield)
+      expect(ix.accounts[0].role).toBe(AccountRole.WRITABLE);           // pool_state (sync zkBTC accounting)
       expect(ix.accounts[1].role).toBe(AccountRole.WRITABLE);           // commitment_tree
       expect(ix.accounts[2].role).toBe(AccountRole.READONLY);           // vk_registry
       expect(ix.accounts[3].role).toBe(AccountRole.WRITABLE_SIGNER);   // user
