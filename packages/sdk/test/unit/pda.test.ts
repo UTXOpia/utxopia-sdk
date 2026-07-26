@@ -22,6 +22,8 @@ import {
 // A fixed program ID for deterministic tests
 const TEST_PROGRAM_ID = "AjbX243s2JMFG2uhfTjKkadjPvQEPgcuyV3vfLJv36MT" as Address;
 const TEST_BTC_PROGRAM_ID = "859B7kw1xDyY8rzSXY6pAPNxaAsPWrsaAPJk3iivd43g" as Address;
+const TEST_POOL_ID = new Uint8Array(32).fill(0x11);
+const TEST_POOL_STATE = new Uint8Array(32).fill(0x22);
 
 describe("commitmentToBytes", () => {
   test("zero produces 32 zero bytes", () => {
@@ -81,7 +83,7 @@ describe("commitmentToBytes", () => {
 
 describe("derivePoolStatePDA", () => {
   test("returns [Address, bump] tuple", async () => {
-    const [address, bump] = await derivePoolStatePDA(TEST_PROGRAM_ID);
+    const [address, bump] = await derivePoolStatePDA(TEST_POOL_ID, TEST_PROGRAM_ID);
     expect(typeof address).toBe("string");
     expect(address.length).toBeGreaterThan(30);
     expect(typeof bump).toBe("number");
@@ -90,15 +92,15 @@ describe("derivePoolStatePDA", () => {
   });
 
   test("deterministic - same program ID gives same PDA", async () => {
-    const [addr1, bump1] = await derivePoolStatePDA(TEST_PROGRAM_ID);
-    const [addr2, bump2] = await derivePoolStatePDA(TEST_PROGRAM_ID);
+    const [addr1, bump1] = await derivePoolStatePDA(TEST_POOL_ID, TEST_PROGRAM_ID);
+    const [addr2, bump2] = await derivePoolStatePDA(TEST_POOL_ID, TEST_PROGRAM_ID);
     expect(addr1).toBe(addr2);
     expect(bump1).toBe(bump2);
   });
 
   test("different program IDs give different PDAs", async () => {
-    const [addr1] = await derivePoolStatePDA(TEST_PROGRAM_ID);
-    const [addr2] = await derivePoolStatePDA(TEST_BTC_PROGRAM_ID);
+    const [addr1] = await derivePoolStatePDA(TEST_POOL_ID, TEST_PROGRAM_ID);
+    const [addr2] = await derivePoolStatePDA(TEST_POOL_ID, TEST_BTC_PROGRAM_ID);
     expect(addr1).not.toBe(addr2);
   });
 });
@@ -169,23 +171,27 @@ describe("deriveDepositReceiptPDA", () => {
 
 describe("deriveCommitmentTreePDA", () => {
   test("returns valid PDA for default tree index", async () => {
-    const [address, bump] = await deriveCommitmentTreePDA(TEST_PROGRAM_ID);
+    const [address, bump] = await deriveCommitmentTreePDA(TEST_POOL_STATE, TEST_PROGRAM_ID);
     expect(typeof address).toBe("string");
     expect(bump).toBeGreaterThanOrEqual(0);
     expect(bump).toBeLessThanOrEqual(255);
   });
 
   test("tree index 0 and undefined give same indexed PDA", async () => {
-    const [addr0] = await deriveCommitmentTreePDA(TEST_PROGRAM_ID, 0);
-    const [addrUndef] = await deriveCommitmentTreePDA(TEST_PROGRAM_ID, undefined);
-    const [addrDefault] = await deriveCommitmentTreePDA(TEST_PROGRAM_ID);
+    const [addr0] = await deriveCommitmentTreePDA(TEST_POOL_STATE, TEST_PROGRAM_ID, 0);
+    const [addrUndef] = await deriveCommitmentTreePDA(
+      TEST_POOL_STATE,
+      TEST_PROGRAM_ID,
+      undefined
+    );
+    const [addrDefault] = await deriveCommitmentTreePDA(TEST_POOL_STATE, TEST_PROGRAM_ID);
     expect(addr0).toBe(addrUndef);
     expect(addr0).toBe(addrDefault);
   });
 
   test("different tree indices give different PDAs", async () => {
-    const [addr1] = await deriveCommitmentTreePDA(TEST_PROGRAM_ID, 1);
-    const [addr2] = await deriveCommitmentTreePDA(TEST_PROGRAM_ID, 2);
+    const [addr1] = await deriveCommitmentTreePDA(TEST_POOL_STATE, TEST_PROGRAM_ID, 1);
+    const [addr2] = await deriveCommitmentTreePDA(TEST_POOL_STATE, TEST_PROGRAM_ID, 2);
     expect(addr1).not.toBe(addr2);
   });
 });

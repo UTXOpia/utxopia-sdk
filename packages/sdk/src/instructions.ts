@@ -11,11 +11,13 @@ import {
   AccountRole,
   type Address,
 } from "@solana/kit";
+import { sha256 } from "@noble/hashes/sha2.js";
 
 import { address, getConfig, TOKEN_2022_PROGRAM_ID } from "./config";
 import { type AuditorCiphertextInput, resolveAuditorCiphertext } from "./auditor-ciphertext";
 import {
   MAGICBLOCK_EPHEMERAL_VAULT_ID,
+  MAGICBLOCK_DELEGATION_PROGRAM_ID,
   MAGICBLOCK_MAGIC_CONTEXT_ID,
   MAGICBLOCK_MAGIC_PROGRAM_ID,
   MAGICBLOCK_MAX_PER_MEMBERS,
@@ -84,6 +86,9 @@ const INSTRUCTION = {
   MAGICBLOCK_COMMIT: 33,
   MAGICBLOCK_PER_PERMISSION: 34,
   ROTATE_AUDITOR: 35,
+  INITIALIZE_POLICY_APPROVAL: 36,
+  POLICY_APPROVAL_DECISION: 37,
+  POLICY_APPROVAL_COMMIT: 38,
 } as const;
 
 /**
@@ -589,6 +594,8 @@ export interface TransactInstructionOptions {
     user: Address;
     /** Nullifier record PDAs (one per input) */
     nullifierRecords: Address[];
+    /** Required when poolState is permissioned. Appended before any proof buffer. */
+    policyApproval?: Address;
   };
 }
 
@@ -731,6 +738,13 @@ export function buildTransactInstruction(options: TransactInstructionOptions): I
   // Nullifier records (writable PDAs)
   for (const nr of options.accounts.nullifierRecords) {
     accounts.push({ address: nr, role: AccountRole.WRITABLE });
+  }
+  if (options.accounts.policyApproval) {
+    accounts.push({ address: options.accounts.policyApproval, role: AccountRole.WRITABLE });
+    accounts.push({
+      address: config.policyProgramId ?? config.utxopiaProgramId,
+      role: AccountRole.READONLY,
+    });
   }
 
   return {
@@ -933,6 +947,8 @@ export interface UnshieldInstructionOptions {
     recipientTokenAccounts: Address[];
     /** Nullifier record PDAs (one per input) */
     nullifierRecords: Address[];
+    /** Required when poolState is permissioned. Appended before any proof buffer. */
+    policyApproval?: Address;
   };
 }
 
@@ -1103,6 +1119,13 @@ export function buildUnshieldInstruction(options: UnshieldInstructionOptions): I
   // Nullifier records (writable PDAs)
   for (const nr of options.accounts.nullifierRecords) {
     accounts.push({ address: nr, role: AccountRole.WRITABLE });
+  }
+  if (options.accounts.policyApproval) {
+    accounts.push({ address: options.accounts.policyApproval, role: AccountRole.WRITABLE });
+    accounts.push({
+      address: config.policyProgramId ?? config.utxopiaProgramId,
+      role: AccountRole.READONLY,
+    });
   }
 
   return {
@@ -1311,7 +1334,8 @@ export function buildRotateTreeInstruction(options: RotateTreeOptions): Instruct
   };
 }
 
-export type MagicBlockDelegateTarget = "poolState" | "commitmentTree";
+/** Only policy decisions are delegated; asset-bearing pool/tree state stays on Solana. */
+export type MagicBlockDelegateTarget = "policyApproval";
 
 export interface MagicBlockDelegateInstructionOptions {
   accounts: {
@@ -1368,8 +1392,7 @@ export interface MagicBlockPerPermissionInstructionOptions {
 }
 
 function magicBlockDelegateTargetByte(target: MagicBlockDelegateTarget): number {
-  if (target === "poolState") return 0;
-  if (target === "commitmentTree") return 1;
+  if (target === "policyApproval") return 2;
   throw new Error(`Unsupported MagicBlock delegate target: ${target}`);
 }
 
@@ -1408,20 +1431,21 @@ export function buildMagicBlockDelegateInstruction(
   const config = getConfig();
 
   return {
-    programAddress: config.utxopiaProgramId,
+    programAddress: config.policyProgramId ?? config.utxopiaProgramId,
     accounts: [
       { address: options.accounts.payer, role: AccountRole.WRITABLE_SIGNER },
       { address: options.accounts.authority, role: AccountRole.READONLY_SIGNER },
       { address: options.accounts.poolState, role: AccountRole.READONLY },
       { address: options.accounts.delegatedAccount, role: AccountRole.WRITABLE },
       {
-        address: options.accounts.ownerProgram ?? config.utxopiaProgramId,
+        address: options.accounts.ownerProgram ?? config.policyProgramId ?? config.utxopiaProgramId,
         role: AccountRole.READONLY,
       },
       { address: options.accounts.buffer, role: AccountRole.WRITABLE },
       { address: options.accounts.delegationRecord, role: AccountRole.WRITABLE },
       { address: options.accounts.delegationMetadata, role: AccountRole.WRITABLE },
       { address: options.accounts.systemProgram ?? SYSTEM_PROGRAM_ADDRESS, role: AccountRole.READONLY },
+      { address: MAGICBLOCK_DELEGATION_PROGRAM_ID, role: AccountRole.READONLY },
     ],
     data: buildMagicBlockDelegateInstructionData({
       target: options.target,
@@ -1556,7 +1580,7 @@ export function buildMagicBlockPerPermissionInstruction(
 ): Instruction {
   const config = getConfig();
   return {
-    programAddress: config.utxopiaProgramId,
+    programAddress: config.policyProgramId ?? config.utxopiaProgramId,
     accounts: [
       { address: options.accounts.authority, role: AccountRole.READONLY_SIGNER },
       { address: options.accounts.poolState, role: AccountRole.READONLY },
@@ -1579,6 +1603,135 @@ export function buildMagicBlockPerPermissionInstruction(
   };
 }
 
+export type PolicyApprovalDecision = "approve" | "reject";
+
+export function buildPolicyRequestHash(options: {
+  programId: Address;
+  poolState: Address;
+  actor: Address;
+  /** Complete instruction data including its discriminator. */
+  instructionData: Uint8Array;
+}): Uint8Array {
+  if (options.instructionData.length < 1) {
+    throw new Error("Policy-bound instruction data cannot be empty");
+  }
+  const domain = new TextEncoder().encode("UTXOPIA_POLICY_APPROVAL_V1");
+  const chunks = [
+    domain,
+    addressToBytes(options.programId),
+    addressToBytes(options.poolState),
+    addressToBytes(options.actor),
+    options.instructionData.slice(0, 1),
+    options.instructionData.slice(1),
+  ];
+  const length = chunks.reduce((total, chunk) => total + chunk.length, 0);
+  const preimage = new Uint8Array(length);
+  let offset = 0;
+  for (const chunk of chunks) {
+    preimage.set(chunk, offset);
+    offset += chunk.length;
+  }
+  return sha256(preimage);
+}
+
+export interface InitializePolicyApprovalOptions {
+  action: number;
+  expiresAtSlot: bigint;
+  actor: Address;
+  requestHash: Uint8Array;
+  nonce: Uint8Array;
+  accounts: {
+    payer: Address;
+    poolState: Address;
+    policyApproval: Address;
+    systemProgram?: Address;
+  };
+}
+
+export function buildInitializePolicyApprovalInstructionData(
+  options: Omit<InitializePolicyApprovalOptions, "accounts">
+): Uint8Array {
+  if (!Number.isInteger(options.action) || options.action < 0 || options.action > 0xff) {
+    throw new Error("Policy approval action must fit in u8");
+  }
+  if (options.requestHash.length !== 32 || options.nonce.length !== 32) {
+    throw new Error("Policy approval requestHash and nonce must be 32 bytes");
+  }
+  const data = new Uint8Array(106);
+  const view = new DataView(data.buffer);
+  data[0] = INSTRUCTION.INITIALIZE_POLICY_APPROVAL;
+  data[1] = options.action;
+  view.setBigUint64(2, options.expiresAtSlot, true);
+  data.set(addressToBytes(options.actor), 10);
+  data.set(options.requestHash, 42);
+  data.set(options.nonce, 74);
+  return data;
+}
+
+export function buildInitializePolicyApprovalInstruction(
+  options: InitializePolicyApprovalOptions
+): Instruction {
+  const config = getConfig();
+  return {
+    programAddress: config.policyProgramId ?? config.utxopiaProgramId,
+    accounts: [
+      { address: options.accounts.payer, role: AccountRole.WRITABLE_SIGNER },
+      { address: options.accounts.poolState, role: AccountRole.READONLY },
+      { address: options.accounts.policyApproval, role: AccountRole.WRITABLE },
+      {
+        address: options.accounts.systemProgram ?? SYSTEM_PROGRAM_ADDRESS,
+        role: AccountRole.READONLY,
+      },
+    ],
+    data: buildInitializePolicyApprovalInstructionData(options),
+  };
+}
+
+export function buildPolicyApprovalDecisionInstruction(options: {
+  decision: PolicyApprovalDecision;
+  accounts: { policyAuthority: Address; policyApproval: Address };
+}): Instruction {
+  const config = getConfig();
+  return {
+    programAddress: config.policyProgramId ?? config.utxopiaProgramId,
+    accounts: [
+      { address: options.accounts.policyAuthority, role: AccountRole.READONLY_SIGNER },
+      { address: options.accounts.policyApproval, role: AccountRole.WRITABLE },
+    ],
+    data: new Uint8Array([
+      INSTRUCTION.POLICY_APPROVAL_DECISION,
+      options.decision === "approve" ? 1 : 2,
+    ]),
+  };
+}
+
+export function buildPolicyApprovalCommitInstruction(options: {
+  accounts: {
+    payer: Address;
+    policyApproval: Address;
+    magicContext?: Address;
+    magicProgram?: Address;
+  };
+}): Instruction {
+  const config = getConfig();
+  return {
+    programAddress: config.policyProgramId ?? config.utxopiaProgramId,
+    accounts: [
+      { address: options.accounts.payer, role: AccountRole.READONLY_SIGNER },
+      {
+        address: options.accounts.magicContext ?? MAGICBLOCK_MAGIC_CONTEXT_ID,
+        role: AccountRole.WRITABLE,
+      },
+      {
+        address: options.accounts.magicProgram ?? MAGICBLOCK_MAGIC_PROGRAM_ID,
+        role: AccountRole.READONLY,
+      },
+      { address: options.accounts.policyApproval, role: AccountRole.WRITABLE },
+    ],
+    data: new Uint8Array([INSTRUCTION.POLICY_APPROVAL_COMMIT]),
+  };
+}
+
 // =============================================================================
 // Redemption Request PDA Derivation
 // =============================================================================
@@ -1586,9 +1739,10 @@ export function buildMagicBlockPerPermissionInstruction(
 /**
  * Derive RedemptionRequest PDA
  *
- * Seeds: ["redemption", user_pubkey, nonce_le_bytes]
+ * Seeds: ["redemption", pool_state, user_pubkey, nonce_le_bytes]
  */
 export function deriveRedemptionRequestPDA(
+  poolState: Address,
   userAddress: Address,
   nonce: bigint,
   programAddress?: Address,
@@ -1602,6 +1756,7 @@ export function deriveRedemptionRequestPDA(
     address: userBytes, // Caller should use getProgramDerivedAddress
     seeds: [
       new TextEncoder().encode("redemption"),
+      addressToBytes(poolState),
       userBytes,
       nonceBytes,
     ],
@@ -1996,8 +2151,8 @@ export interface CompleteDepositPermissionedOptions {
     tokenConfig: Address;
     /** 14. pool_config PDA (readonly) */
     poolConfig: Address;
-    /** 15. auditor (signer, readonly) — permissioned gate */
-    auditor: Address;
+    /** 15. one-time PolicyApproval (writable) */
+    policyApproval: Address;
   };
 }
 
@@ -2040,7 +2195,7 @@ export function buildCompleteDepositPermissionedInstructionData(options: {
 /**
  * Build a complete completeDepositPermissioned instruction (disc=22).
  *
- * Same accounts as complete_deposit (disc=11), plus an auditor signer
+ * Same accounts as complete_deposit (disc=11), plus a one-time PolicyApproval
  * appended at account index 15.
  *
  * Accounts:
@@ -2059,7 +2214,7 @@ export function buildCompleteDepositPermissionedInstructionData(options: {
  * 12. utxo_record         (writable)
  * 13. token_config        (writable)
  * 14. pool_config         (readonly)
- * 15. auditor             (readonly signer) — permissioned gate
+ * 15. policy_approval     (writable)
  */
 export function buildCompleteDepositPermissionedInstruction(
   options: CompleteDepositPermissionedOptions,
@@ -2092,8 +2247,8 @@ export function buildCompleteDepositPermissionedInstruction(
       { address: options.accounts.utxoRecord,          role: AccountRole.WRITABLE },
       { address: options.accounts.tokenConfig,         role: AccountRole.WRITABLE },
       { address: options.accounts.poolConfig,          role: AccountRole.READONLY },
-      // index 15: auditor signer — permissioned gate
-      { address: options.accounts.auditor,             role: AccountRole.READONLY_SIGNER },
+      { address: options.accounts.policyApproval,      role: AccountRole.WRITABLE },
+      { address: config.policyProgramId ?? config.utxopiaProgramId, role: AccountRole.READONLY },
     ],
     data,
   };
@@ -2121,7 +2276,7 @@ export interface ShieldPermissionedInstructionOptions {
    * to have the builder encrypt and embed the ciphertext automatically.
    */
   auditorCiphertext: AuditorCiphertextInput;
-  /** Account addresses — same 7 as shield (disc=12) PLUS auditor at index 7 */
+  /** Account addresses — same 7 as shield (disc=12) plus PolicyApproval at index 7 */
   accounts: {
     /** 0. user (writable signer) */
     user: Address;
@@ -2137,8 +2292,8 @@ export interface ShieldPermissionedInstructionOptions {
     commitmentTree: Address;
     /** 6. token_program (readonly) */
     tokenProgram: Address;
-    /** 7. auditor (signer) — permissioned gate */
-    auditor: Address;
+    /** 7. one-time PolicyApproval (writable) */
+    policyApproval: Address;
   };
 }
 
@@ -2178,7 +2333,7 @@ export function buildShieldPermissionedInstructionData(options: {
 /**
  * Build a complete shieldPermissioned instruction (disc=23).
  *
- * Same accounts as shield (disc=12), plus an auditor signer appended at
+ * Same accounts as shield (disc=12), plus a one-time PolicyApproval appended at
  * account index 7.
  *
  * Accounts:
@@ -2189,7 +2344,7 @@ export function buildShieldPermissionedInstructionData(options: {
  * 4. vault             (writable)
  * 5. commitment_tree   (writable)
  * 6. token_program     (readonly)
- * 7. auditor           (signer) — permissioned gate
+ * 7. policy_approval   (writable)
  */
 export function buildShieldPermissionedInstruction(
   options: ShieldPermissionedInstructionOptions,
@@ -2212,8 +2367,8 @@ export function buildShieldPermissionedInstruction(
       { address: options.accounts.vault,            role: AccountRole.WRITABLE },
       { address: options.accounts.commitmentTree,   role: AccountRole.WRITABLE },
       { address: options.accounts.tokenProgram,     role: AccountRole.READONLY },
-      // index 7: auditor signer — permissioned gate
-      { address: options.accounts.auditor,          role: AccountRole.READONLY_SIGNER },
+      { address: options.accounts.policyApproval,   role: AccountRole.WRITABLE },
+      { address: config.policyProgramId ?? config.utxopiaProgramId, role: AccountRole.READONLY },
     ],
     data,
   };

@@ -51,6 +51,9 @@ export interface NetworkConfig {
   /** UTXOpia main program ID */
   utxopiaProgramId: Address;
 
+  /** Minimal PER PolicyApproval coprocessor. Falls back to the asset program on older networks. */
+  policyProgramId?: Address;
+
   /** BTC Light Client program ID (manages light client + block headers for SPV) */
   btcLightClientProgramId: Address;
 
@@ -202,27 +205,23 @@ export const LOCALNET_CHADBUFFER_PROGRAM_ID: Address = address(
 // =============================================================================
 
 /**
- * Devnet Configuration (v3.3.0)
- *
- * Fresh deployment 2026-03-25:
- * - RedemptionRequest PDA now 98 bytes (service_fee locked at request time)
- * - Program ID: AjbX243s2JMFG2uhfTjKkadjPvQEPgcuyV3vfLJv36MT
+ * Fresh multi-pool devnet deployment (2026-07-26).
+ * The default domain is public; institution pools are selected explicitly.
  */
 export const DEVNET_CONFIG: NetworkConfig = {
   network: "devnet",
 
-  // Program IDs (devnet deployment 2026-03-25)
-  utxopiaProgramId: address("AjbX243s2JMFG2uhfTjKkadjPvQEPgcuyV3vfLJv36MT"),
+  utxopiaProgramId: address("CvfSyACR8xemPdeJsB3D8Xh15rKUQ3b5c1PvnmABCBJp"),
+  policyProgramId: address("9asWYKVriWGpExW5xM44ChHjZtispkLCiWKkM8SQi8Rs"),
   btcLightClientProgramId: address("859B7kw1xDyY8rzSXY6pAPNxaAsPWrsaAPJk3iivd43g"),
   chadbufferProgramId: CHADBUFFER_PROGRAM_ID,
   token2022ProgramId: TOKEN_2022_PROGRAM_ID,
   ataProgramId: ATA_PROGRAM_ID,
 
-  // Deployed Accounts (devnet deployment 2026-03-25)
-  poolStatePda: address("Gq2UWqttgbT92Dn4dRAdQzJE3yHAEAi4GGZYY2VHEXMP"),
-  commitmentTreePda: address("FMML3M5NU5kMS9nbMAeMhtZ1ecuzhGwM2oTaRVqWvhcQ"),
-  zkbtcMint: address("5m3bbj8tzvGfS1ikv4zxa6zraFUVnff5yYWM51wCDQjB"),
-  poolVault: address("6mXkh6qHunbRFUJtDxB55ZG3aDd9MxUyHV2Z2BpQi4HX"),
+  poolStatePda: address("9xeWc39r3Z176MUpMpaqCGJGneHMj4pfMRv9u6dp2Qgd"),
+  commitmentTreePda: address("4FvM9dCzDvr39Xu5xRUQc6EEm3UjSikyWUY5Hzpc5C4A"),
+  zkbtcMint: address("GuruxfN5irYcCyDiKFMeDRTNbP2WeHF1oWjQ8q8Esc16"),
+  poolVault: address("3GffHxesFsGj4QmgQ8ozs17dZFNTv4AAhdwyR2XZPzkm"),
 
   // RPC Endpoints
   solanaRpcUrl: "https://api.devnet.solana.com",
@@ -557,6 +556,7 @@ export type NetworkId = AppNetworkId;
 export async function initConfig(overrides?: {
   network?: NetworkId;
   utxopiaProgramId?: string;
+  policyProgramId?: string;
   zkbtcMint?: string;
   solanaRpcUrl?: string;
   ikaDwalletXOnlyPubkey?: string;
@@ -590,12 +590,21 @@ export async function initConfig(overrides?: {
     overrides?.utxopiaProgramId ||
     (typeof process !== "undefined" && (process.env?.NEXT_PUBLIC_UTXOPIA_PROGRAM_ID || process.env?.UTXOPIA_PROGRAM_ID)) ||
     undefined;
+  const policyProgramId =
+    overrides?.policyProgramId ||
+    (typeof process !== "undefined" &&
+      (process.env?.NEXT_PUBLIC_UTXOPIA_POLICY_PROGRAM_ID ||
+        process.env?.UTXOPIA_POLICY_PROGRAM_ID)) ||
+    undefined;
+  if (policyProgramId) {
+    config.policyProgramId = address(policyProgramId);
+  }
 
   // Resolve mint: param > env > default
-  let mint =
+  const mint =
     overrides?.zkbtcMint ||
     (typeof process !== "undefined" && (process.env?.NEXT_PUBLIC_ZKBTC_MINT || process.env?.UTXOPIA_ZKBTC_MINT)) ||
-    undefined;
+    config.zkbtcMint;
 
   // Resolve RPC URL for on-chain fetching
   const rpcUrl =
@@ -607,46 +616,27 @@ export async function initConfig(overrides?: {
     config.utxopiaProgramId = address(programId);
     config.groth16VerifierProgramId = address(programId); // same program
 
-    // Derive PDAs from program ID
+    // Fresh multi-pool deployments use zkBTC mint as the pool namespace.
+    const encoder = getAddressEncoder();
+    config.zkbtcMint = address(mint);
     const [poolStatePda] = await getProgramDerivedAddress({
       programAddress: config.utxopiaProgramId,
-      seeds: [new TextEncoder().encode("pool_state")],
+      seeds: [
+        new TextEncoder().encode("pool_state"),
+        encoder.encode(config.zkbtcMint),
+      ],
     });
+    const treeIndex = new Uint8Array(4);
     const [commitmentTreePda] = await getProgramDerivedAddress({
       programAddress: config.utxopiaProgramId,
-      seeds: [new TextEncoder().encode("commitment_tree")],
+      seeds: [
+        new TextEncoder().encode("commitment_tree"),
+        encoder.encode(poolStatePda),
+        treeIndex,
+      ],
     });
     config.poolStatePda = poolStatePda;
     config.commitmentTreePda = commitmentTreePda;
-
-    // If mint not provided, fetch from on-chain pool state (offset 36..68 = zkbtc_mint)
-    if (!mint && rpcUrl) {
-      try {
-        const res = await fetch(rpcUrl, {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({
-            jsonrpc: "2.0",
-            id: 1,
-            method: "getAccountInfo",
-            params: [poolStatePda.toString(), { encoding: "base64" }],
-          }),
-        });
-        const json = await res.json() as { result?: { value?: { data?: [string, string] } } };
-        const b64 = json.result?.value?.data?.[0];
-        if (b64) {
-          const data = Uint8Array.from(atob(b64), c => c.charCodeAt(0));
-          // Pool state layout: disc(1) + bump(1) + flags(1) + pad(1) + authority(32) + zkbtc_mint(32)
-          if (data.length >= 68 && data[0] === 0x01) {
-            const mintBytes = data.slice(36, 68);
-            const decoder = getAddressDecoder();
-            mint = decoder.decode(mintBytes).toString();
-          }
-        }
-      } catch {
-        // Silently fall back to default config mint
-      }
-    }
   }
 
   if (mint) {
@@ -683,6 +673,8 @@ export async function initConfig(overrides?: {
 
 /** Default UTXOpia program ID (from current config) */
 export const UTXOPIA_PROGRAM_ID: Address = DEVNET_CONFIG.utxopiaProgramId;
+export const UTXOPIA_POLICY_PROGRAM_ID: Address =
+  DEVNET_CONFIG.policyProgramId ?? DEVNET_CONFIG.utxopiaProgramId;
 
 /** BTC Light Client program ID (manages light client + block headers) */
 export const BTC_LIGHT_CLIENT_PROGRAM_ID: Address = DEVNET_CONFIG.btcLightClientProgramId;

@@ -131,7 +131,11 @@ export async function getTokenConfig(
   mintAddress: Uint8Array,
 ): Promise<TokenConfigData | null> {
   const config = getConfig();
-  const [configPda] = await deriveTokenConfigPDA(mintAddress, config.utxopiaProgramId);
+  const [configPda] = await deriveTokenConfigPDA(
+    config.poolStatePda,
+    mintAddress,
+    config.utxopiaProgramId
+  );
 
   const accountInfo = await rpc.getAccountInfo(configPda, { encoding: "base64" });
   if (!accountInfo?.value?.data) return null;

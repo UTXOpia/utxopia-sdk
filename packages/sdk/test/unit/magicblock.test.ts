@@ -9,6 +9,7 @@ import {
   MAGICBLOCK_MAGIC_CONTEXT_ID,
   MAGICBLOCK_MAGIC_PROGRAM_ID,
   MAGICBLOCK_PERMISSION_PROGRAM_ID,
+  UTXOPIA_POLICY_PROGRAM_ID,
   buildMagicBlockPerMemberFlags,
   buildMagicBlockCommitInstruction,
   buildMagicBlockDelegateInstruction,
@@ -19,11 +20,16 @@ import {
   buildMagicBlockCommitInstructionData,
   buildMagicBlockDelegateInstructionData,
   buildMagicBlockPerPermissionInstructionData,
+  buildPolicyRequestHash,
+  buildInitializePolicyApprovalInstruction,
+  buildPolicyApprovalDecisionInstruction,
+  buildPolicyApprovalCommitInstruction,
   buildDefaultPrivacyDomain,
   deriveMagicBlockDelegateBufferPda,
   deriveMagicBlockDelegationMetadataPda,
   deriveMagicBlockDelegationRecordPda,
   deriveMagicBlockPermissionPda,
+  derivePolicyApprovalPDA,
   getMagicBlockValidatorIdentity,
   getMagicBlockEndpoint,
   requiresMagicBlockEndpoint,
@@ -36,6 +42,7 @@ describe("MagicBlock execution domains", () => {
     expect(domain.domainId).toBe("public");
     expect(domain.kind).toBe("public");
     expect(domain.executionMode).toBe("solana");
+    expect(domain.policyMode).toBe("disabled");
     expect(domain.programId).toBe(DEVNET_CONFIG.utxopiaProgramId);
     expect(domain.poolStatePda).toBe(DEVNET_CONFIG.poolStatePda);
     expect(domain.commitmentTreePda).toBe(DEVNET_CONFIG.commitmentTreePda);
@@ -70,22 +77,22 @@ describe("MagicBlock execution domains", () => {
   test("builds MagicBlock delegate and commit instruction data", () => {
     const validator = getMagicBlockValidatorIdentity("asia");
     const delegate = buildMagicBlockDelegateInstructionData({
-      target: "commitmentTree",
+      target: "policyApproval",
       commitFrequencyMs: 500,
       validator,
     });
     expect(delegate.length).toBe(38);
     expect(delegate[0]).toBe(32);
-    expect(delegate[1]).toBe(1);
+    expect(delegate[1]).toBe(2);
     expect(new DataView(delegate.buffer).getUint32(2, true)).toBe(500);
 
     const anyValidator = buildMagicBlockDelegateInstructionData({
-      target: "poolState",
+      target: "policyApproval",
       commitFrequencyMs: 1000,
     });
     expect(anyValidator.length).toBe(6);
     expect(anyValidator[0]).toBe(32);
-    expect(anyValidator[1]).toBe(0);
+    expect(anyValidator[1]).toBe(2);
 
     const commit = buildMagicBlockCommitInstructionData({
       nullifierHashes: [new Uint8Array(32).fill(7)],
@@ -93,6 +100,56 @@ describe("MagicBlock execution domains", () => {
     });
     expect(Array.from(commit.slice(0, 4))).toEqual([33, 1, 1, 1]);
     expect(commit.slice(4)).toEqual(new Uint8Array(32).fill(7));
+  });
+
+  test("builds the one-time PolicyApproval lifecycle", async () => {
+    const payer = DEVNET_CONFIG.utxopiaProgramId;
+    const pool = DEVNET_CONFIG.poolStatePda;
+    const actionData = new Uint8Array([13, 1, 1, 0, 0]);
+    const requestHash = buildPolicyRequestHash({
+      programId: payer,
+      poolState: pool,
+      actor: payer,
+      instructionData: actionData,
+    });
+    const nonce = new Uint8Array(32).fill(7);
+    const [approval] = await derivePolicyApprovalPDA(pool, requestHash, nonce);
+    const initialize = buildInitializePolicyApprovalInstruction({
+      action: 13,
+      expiresAtSlot: 1234n,
+      actor: payer,
+      requestHash,
+      nonce,
+      accounts: { payer, poolState: pool, policyApproval: approval },
+    });
+    expect(initialize.data[0]).toBe(36);
+    expect(initialize.programAddress).toBe(UTXOPIA_POLICY_PROGRAM_ID);
+    expect(initialize.data.length).toBe(106);
+    expect(initialize.accounts?.at(2)?.role).toBe(AccountRole.WRITABLE);
+
+    const decision = buildPolicyApprovalDecisionInstruction({
+      decision: "approve",
+      accounts: { policyAuthority: payer, policyApproval: approval },
+    });
+    expect(Array.from(decision.data)).toEqual([37, 1]);
+
+    const commit = buildPolicyApprovalCommitInstruction({
+      accounts: { payer, policyApproval: approval },
+    });
+    expect(Array.from(commit.data)).toEqual([38]);
+    expect(commit.accounts?.map((account) => account.address)).toEqual([
+      payer,
+      MAGICBLOCK_MAGIC_CONTEXT_ID,
+      MAGICBLOCK_MAGIC_PROGRAM_ID,
+      approval,
+    ]);
+
+    const delegated = buildMagicBlockDelegateInstructionData({
+      target: "policyApproval",
+      commitFrequencyMs: 0,
+      validator: getMagicBlockValidatorIdentity("tee"),
+    });
+    expect(delegated[1]).toBe(2);
   });
 
   test("derives MagicBlock delegate PDAs for a delegated UTXOpia account", async () => {
@@ -115,18 +172,18 @@ describe("MagicBlock execution domains", () => {
     const authority = DEVNET_CONFIG.utxopiaProgramId;
     const data = buildMagicBlockPerPermissionInstructionData({
       operation: "create",
-      target: "commitmentTree",
+      target: "policyApproval",
       members: [{
         address: authority,
         flags: buildMagicBlockPerMemberFlags(["authority", "txLogs"]),
       }],
     });
-    expect(Array.from(data.slice(0, 4))).toEqual([34, 0, 1, 1]);
+    expect(Array.from(data.slice(0, 4))).toEqual([34, 0, 2, 1]);
     expect(data.length).toBe(37);
 
     expect(() => buildMagicBlockPerPermissionInstructionData({
       operation: "update",
-      target: "commitmentTree",
+      target: "policyApproval",
       members: [{ address: authority, flags: buildMagicBlockPerMemberFlags(["txLogs"]) }],
     })).toThrow("retain an authority");
   });
@@ -136,7 +193,7 @@ describe("MagicBlock execution domains", () => {
     const pool = DEVNET_CONFIG.poolStatePda;
     const tree = DEVNET_CONFIG.commitmentTreePda;
     const delegate = buildMagicBlockDelegateInstruction({
-      target: "commitmentTree",
+      target: "policyApproval",
       commitFrequencyMs: 500,
       accounts: {
         payer,
@@ -148,16 +205,18 @@ describe("MagicBlock execution domains", () => {
         delegationMetadata: pool,
       },
     });
+    expect(delegate.programAddress).toBe(UTXOPIA_POLICY_PROGRAM_ID);
     expect(delegate.accounts?.map((account) => account.address)).toEqual([
       payer,
       payer,
       pool,
       tree,
-      payer,
+      UTXOPIA_POLICY_PROGRAM_ID,
       pool,
       tree,
       pool,
       "11111111111111111111111111111111",
+      MAGICBLOCK_DELEGATION_PROGRAM_ID,
     ]);
     expect(delegate.accounts?.map((account) => account.role)).toEqual([
       AccountRole.WRITABLE_SIGNER,
@@ -168,6 +227,7 @@ describe("MagicBlock execution domains", () => {
       AccountRole.WRITABLE,
       AccountRole.WRITABLE,
       AccountRole.WRITABLE,
+      AccountRole.READONLY,
       AccountRole.READONLY,
     ]);
 
@@ -201,7 +261,7 @@ describe("MagicBlock execution domains", () => {
 
     const permission = buildMagicBlockPerPermissionInstruction({
       operation: "create",
-      target: "commitmentTree",
+      target: "policyApproval",
       members: [{
         address: payer,
         flags: buildMagicBlockPerMemberFlags(["authority"]),
@@ -275,20 +335,20 @@ describe("MagicBlock execution domains", () => {
       domainId: "institution",
       label: "Institution Pool",
       kind: "institution",
-      executionMode: "per",
+      policyMode: "per",
     });
 
-    expect(() => assertMagicBlockRouteReady(domain)).toThrow("no MagicBlock PER endpoint");
+    expect(() => assertDomainExecutionPolicy(domain)).toThrow("requires a PER policy endpoint");
   });
 
-  test("rejects public domains defaulting to PER", () => {
+  test("rejects public domains requiring PER policy", () => {
     const domain = buildDefaultPrivacyDomain(DEVNET_CONFIG, {
-      executionMode: "per",
+      policyMode: "per",
       magicblock: { perUrl: "https://per.example" },
     });
 
     expect(() => assertDomainExecutionPolicy(domain)).toThrow(
-      "Public permissionless domains must not default to PER"
+      "Public permissionless domains must not require PER policy"
     );
   });
 
@@ -297,7 +357,7 @@ describe("MagicBlock execution domains", () => {
       domainId: "institution",
       label: "Institution Pool",
       kind: "institution",
-      executionMode: "per",
+      policyMode: "per",
       magicblock: {
         perUrl: "https://per.example",
         validatorRegion: "asia",
@@ -305,11 +365,11 @@ describe("MagicBlock execution domains", () => {
     });
 
     expect(() => assertDomainExecutionPolicy(domain)).toThrow(
-      "PER domains must use the TEE validator region"
+      "PER policy domains must use the TEE validator region"
     );
   });
 
-  test("rejects institution domains that silently fall back to normal Solana", () => {
+  test("keeps institution assets on Solana without requiring PER by default", () => {
     const domain = buildDefaultPrivacyDomain(DEVNET_CONFIG, {
       domainId: "institution",
       label: "Institution Pool",
@@ -317,8 +377,16 @@ describe("MagicBlock execution domains", () => {
       executionMode: "solana",
     });
 
+    expect(() => assertDomainExecutionPolicy(domain)).not.toThrow();
+  });
+
+  test("rejects ER/PER asset execution modes", () => {
+    const domain = buildDefaultPrivacyDomain(DEVNET_CONFIG, {
+      executionMode: "er",
+      magicblock: { erUrl: "https://er.example" },
+    });
     expect(() => assertDomainExecutionPolicy(domain)).toThrow(
-      "Institution domains must use ER or PER explicitly"
+      "asset execution must remain on Solana"
     );
   });
 
@@ -327,7 +395,7 @@ describe("MagicBlock execution domains", () => {
       domainId: "institution",
       label: "Institution Pool",
       kind: "institution",
-      executionMode: "per",
+      policyMode: "per",
       magicblock: {
         perUrl: "https://per.example",
         validatorRegion: "tee",

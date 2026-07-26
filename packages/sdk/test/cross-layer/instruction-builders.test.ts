@@ -332,6 +332,29 @@ describe("Cross-layer: buildTransactInstructionData (disc=13)", () => {
       expect(ix.accounts[4].role).toBe(AccountRole.READONLY);           // system_program
       expect(ix.accounts[5].role).toBe(AccountRole.WRITABLE);           // nullifier_record
     });
+
+    it("permissioned transact appends writable approval then readonly policy program", () => {
+      const ix = buildTransactInstruction({
+        nInputs: 1, nOutputs: 1,
+        proofBytes: fakeProof(),
+        merkleRoot: filledBytes(32, 0x01),
+        boundParamsHash: filledBytes(32, 0x02),
+        nullifiers: [filledBytes(32, 0x03)],
+        commitmentsOut: [filledBytes(32, 0x04)],
+        stealthData: [fakeStealth(0)],
+        accounts: {
+          poolState: fakeAddress("pool"),
+          commitmentTree: fakeAddress("tree"),
+          vkRegistry: fakeAddress("vk"),
+          user: fakeAddress("user"),
+          nullifierRecords: [fakeAddress("nr0")],
+          policyApproval: fakeAddress("approval"),
+        },
+      });
+      expect(ix.accounts.length).toBe(8);
+      expect(ix.accounts[6].role).toBe(AccountRole.WRITABLE);
+      expect(ix.accounts[7].role).toBe(AccountRole.READONLY);
+    });
   });
 
   describe("edge cases", () => {
@@ -671,6 +694,33 @@ describe("Cross-layer: buildUnshieldInstructionData (disc=14)", () => {
       expect(ix.accounts[7].role).toBe(AccountRole.READONLY);           // token_program
       expect(ix.accounts[8].role).toBe(AccountRole.WRITABLE);           // public destination
       expect(ix.accounts[9].role).toBe(AccountRole.WRITABLE);           // nullifier_record
+    });
+
+    it("permissioned unshield appends writable approval then readonly policy program", () => {
+      const ix = buildUnshieldInstruction({
+        nInputs: 1, nOutputs: 2,
+        proofBytes: fakeProof(),
+        merkleRoot: filledBytes(32, 0x01),
+        boundParamsHash: filledBytes(32, 0x02),
+        nullifiers: [filledBytes(32, 0x03)],
+        commitmentsOut: [filledBytes(32, 0x04), filledBytes(32, 0x14)],
+        stealthData: [fakeStealth(0)],
+        unshieldAmounts: [50000n],
+        accounts: {
+          poolState: fakeAddress("pool"),
+          commitmentTree: fakeAddress("tree"),
+          vkRegistry: fakeAddress("vk"),
+          user: fakeAddress("user"),
+          tokenConfig: fakeAddress("tc"),
+          vault: fakeAddress("vault"),
+          recipientTokenAccounts: [fakeAddress("uta")],
+          nullifierRecords: [fakeAddress("nr0")],
+          policyApproval: fakeAddress("approval"),
+        },
+      });
+      expect(ix.accounts.length).toBe(12);
+      expect(ix.accounts[10].role).toBe(AccountRole.WRITABLE);
+      expect(ix.accounts[11].role).toBe(AccountRole.READONLY);
     });
   });
 

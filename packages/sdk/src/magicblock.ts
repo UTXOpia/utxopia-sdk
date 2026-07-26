@@ -3,6 +3,7 @@ import { Connection as MagicBlockConnection } from "@magicblock-labs/ephemeral-r
 import { address, type NetworkConfig } from "./config";
 
 export type MagicBlockExecutionMode = "solana" | "er" | "per";
+export type MagicBlockPolicyMode = "disabled" | "per";
 export type MagicBlockValidatorRegion = "asia" | "eu" | "us" | "tee" | "local";
 
 export type PrivacyDomainKind = "public" | "institution";
@@ -29,6 +30,8 @@ export interface PrivacyDomainConfig {
   kind: PrivacyDomainKind;
   /** Execution lane selected for this domain. */
   executionMode: MagicBlockExecutionMode;
+  /** Optional PER policy coprocessor. Asset execution remains Solana. */
+  policyMode: MagicBlockPolicyMode;
   /** UTXOpia program instance for this domain. */
   programId: Address;
   /** Pool state PDA for this domain. */
@@ -48,6 +51,7 @@ export interface BuildPrivacyDomainOptions {
   label?: string;
   kind?: PrivacyDomainKind;
   executionMode?: MagicBlockExecutionMode;
+  policyMode?: MagicBlockPolicyMode;
   auditor?: Address;
   auditorViewingPubkey?: string;
   magicblock?: MagicBlockEndpointConfig;
@@ -193,6 +197,7 @@ export function buildDefaultPrivacyDomain(
     label: options.label ?? "Public Pool",
     kind: options.kind ?? "public",
     executionMode: options.executionMode ?? "solana",
+    policyMode: options.policyMode ?? "disabled",
     programId: config.utxopiaProgramId,
     poolStatePda: config.poolStatePda,
     commitmentTreePda: config.commitmentTreePda,
@@ -201,7 +206,7 @@ export function buildDefaultPrivacyDomain(
     magicblock: {
       routerUrl: MAGICBLOCK_DEVNET_ROUTER_URL,
       routerWsUrl: MAGICBLOCK_DEVNET_ROUTER_WS_URL,
-      validatorRegion: options.executionMode === "per" ? "tee" : "asia",
+      validatorRegion: options.policyMode === "per" ? "tee" : "asia",
       ...options.magicblock,
     },
   };
@@ -239,16 +244,18 @@ export function assertMagicBlockRouteReady(domain: PrivacyDomainConfig): void {
 }
 
 export function assertDomainExecutionPolicy(domain: PrivacyDomainConfig): void {
-  if (domain.kind === "public" && domain.executionMode === "per") {
-    throw new Error("Public permissionless domains must not default to PER");
+  if (domain.executionMode !== "solana") {
+    throw new Error("UTXOpia asset execution must remain on Solana");
   }
-  if (domain.executionMode === "per" && domain.magicblock?.validatorRegion !== "tee") {
-    throw new Error("PER domains must use the TEE validator region");
+  if (domain.kind === "public" && domain.policyMode === "per") {
+    throw new Error("Public permissionless domains must not require PER policy");
   }
-  if (domain.kind !== "public" && domain.executionMode === "solana") {
-    throw new Error("Institution domains must use ER or PER explicitly");
+  if (domain.policyMode === "per" && domain.magicblock?.validatorRegion !== "tee") {
+    throw new Error("PER policy domains must use the TEE validator region");
   }
-  assertMagicBlockRouteReady(domain);
+  if (domain.policyMode === "per" && !domain.magicblock?.perUrl) {
+    throw new Error(`Privacy domain "${domain.domainId}" requires a PER policy endpoint`);
+  }
 }
 
 /**

@@ -8,14 +8,25 @@
  */
 
 import {
+  getAddressEncoder,
   getProgramDerivedAddress,
   type Address,
 } from "@solana/kit";
 
 import {
   UTXOPIA_PROGRAM_ID,
+  UTXOPIA_POLICY_PROGRAM_ID,
   BTC_LIGHT_CLIENT_PROGRAM_ID,
 } from "./config";
+
+function seedBytes(value: Address | Uint8Array, label: string): Uint8Array {
+  const bytes =
+    typeof value === "string"
+      ? new Uint8Array(getAddressEncoder().encode(value))
+      : value;
+  if (bytes.length !== 32) throw new Error(`${label} must be 32 bytes`);
+  return bytes;
+}
 
 // =============================================================================
 // PDA Seeds
@@ -30,8 +41,10 @@ export const PDA_SEEDS = {
   VERIFIED_TX: "verified_tx",
   DEPOSIT: "deposit",
   NULLIFIER: "nullifier",
+  POLICY_APPROVAL: "policy_approval",
   VK_REGISTRY: "vk_registry",
   TOKEN_CONFIG: "token_config",
+  POOL_CONFIG: "pool_config",
 } as const;
 
 // =============================================================================
@@ -42,11 +55,13 @@ export const PDA_SEEDS = {
  * Derive Pool State PDA
  */
 export async function derivePoolStatePDA(
+  poolId: Address | Uint8Array,
   programId: Address = UTXOPIA_PROGRAM_ID
 ): Promise<[Address, number]> {
+  const poolIdBytes = seedBytes(poolId, "poolId");
   const result = await getProgramDerivedAddress({
     programAddress: programId,
-    seeds: [new TextEncoder().encode(PDA_SEEDS.POOL_STATE)],
+    seeds: [new TextEncoder().encode(PDA_SEEDS.POOL_STATE), poolIdBytes],
   });
   return [result[0], result[1]];
 }
@@ -57,15 +72,21 @@ export async function derivePoolStatePDA(
  * @param treeIndex - Tree rotation index (default 0).
  */
 export async function deriveCommitmentTreePDA(
+  poolState: Address | Uint8Array,
   programId: Address = UTXOPIA_PROGRAM_ID,
   treeIndex?: number,
 ): Promise<[Address, number]> {
+  const poolStateBytes = seedBytes(poolState, "poolState");
   const resolvedTreeIndex = treeIndex ?? 0;
   const indexBytes = new Uint8Array(4);
   new DataView(indexBytes.buffer).setUint32(0, resolvedTreeIndex, true);
   const result = await getProgramDerivedAddress({
     programAddress: programId,
-    seeds: [new TextEncoder().encode(PDA_SEEDS.COMMITMENT_TREE), indexBytes],
+    seeds: [
+      new TextEncoder().encode(PDA_SEEDS.COMMITMENT_TREE),
+      poolStateBytes,
+      indexBytes,
+    ],
   });
   return [result[0], result[1]];
 }
@@ -75,12 +96,32 @@ export async function deriveCommitmentTreePDA(
  * Seeds: ["token_config", mint_pubkey_bytes]
  */
 export async function deriveTokenConfigPDA(
+  poolState: Address | Uint8Array,
   mintPubkey: Uint8Array,
   programId: Address = UTXOPIA_PROGRAM_ID
 ): Promise<[Address, number]> {
+  const poolStateBytes = seedBytes(poolState, "poolState");
+  seedBytes(mintPubkey, "mintPubkey");
   const result = await getProgramDerivedAddress({
     programAddress: programId,
-    seeds: [new TextEncoder().encode(PDA_SEEDS.TOKEN_CONFIG), mintPubkey],
+    seeds: [
+      new TextEncoder().encode(PDA_SEEDS.TOKEN_CONFIG),
+      poolStateBytes,
+      mintPubkey,
+    ],
+  });
+  return [result[0], result[1]];
+}
+
+/** Derive ["pool_config", pool_state]. */
+export async function derivePoolConfigPDA(
+  poolState: Address | Uint8Array,
+  programId: Address = UTXOPIA_PROGRAM_ID
+): Promise<[Address, number]> {
+  const poolStateBytes = seedBytes(poolState, "poolState");
+  const result = await getProgramDerivedAddress({
+    programAddress: programId,
+    seeds: [new TextEncoder().encode(PDA_SEEDS.POOL_CONFIG), poolStateBytes],
   });
   return [result[0], result[1]];
 }
@@ -95,6 +136,32 @@ export async function deriveNullifierRecordPDA(
   const result = await getProgramDerivedAddress({
     programAddress: programId,
     seeds: [new TextEncoder().encode(PDA_SEEDS.NULLIFIER), nullifierHash],
+  });
+  return [result[0], result[1]];
+}
+
+/**
+ * Derive one-time PolicyApproval PDA.
+ * Seeds: ["policy_approval", pool_state, request_hash, nonce]
+ */
+export async function derivePolicyApprovalPDA(
+  poolState: Address | Uint8Array,
+  requestHash: Uint8Array,
+  nonce: Uint8Array,
+  programId: Address = UTXOPIA_POLICY_PROGRAM_ID
+): Promise<[Address, number]> {
+  const poolStateBytes = seedBytes(poolState, "poolState");
+  if (requestHash.length !== 32 || nonce.length !== 32) {
+    throw new Error("requestHash and nonce must be 32 bytes");
+  }
+  const result = await getProgramDerivedAddress({
+    programAddress: programId,
+    seeds: [
+      new TextEncoder().encode(PDA_SEEDS.POLICY_APPROVAL),
+      poolStateBytes,
+      requestHash,
+      nonce,
+    ],
   });
   return [result[0], result[1]];
 }
@@ -176,9 +243,10 @@ export async function deriveVerifiedTransactionPDA(
 /**
  * Derive Redemption Request PDA
  *
- * Seeds: ["redemption", user_pubkey(32), nonce_le(8)]
+ * Seeds: ["redemption", pool_state, user_pubkey(32), nonce_le(8)]
  */
 export async function deriveRedemptionRequestPDA(
+  poolState: Address | Uint8Array,
   userPubkey: Uint8Array,
   nonce: bigint,
   programId: Address = UTXOPIA_PROGRAM_ID
@@ -189,7 +257,12 @@ export async function deriveRedemptionRequestPDA(
 
   const result = await getProgramDerivedAddress({
     programAddress: programId,
-    seeds: [new TextEncoder().encode("redemption"), userPubkey, nonceBytes],
+    seeds: [
+      new TextEncoder().encode("redemption"),
+      seedBytes(poolState, "poolState"),
+      userPubkey,
+      nonceBytes,
+    ],
   });
   return [result[0], result[1]];
 }
