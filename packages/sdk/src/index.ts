@@ -4,7 +4,7 @@
  * Complete client library for interacting with the UTXOpia protocol.
  * Private Bitcoin using ZK proofs.
  *
- * Networks: Solana/Sui deployments + Bitcoin testnet4/regtest/mainnet
+ * Networks: Solana deployments + Bitcoin testnet4/regtest/mainnet
  *
  * ## Quick Start
  * ```typescript
@@ -340,7 +340,6 @@ export {
   decodeDepositOpReturnHeader,
   validateDepositOpReturnContext,
   computeDepositPoolTag,
-  computeSuiDepositPoolTag,
   DEPOSIT_DESTINATION_CHAIN,
   DEPOSIT_BITCOIN_NETWORK,
   DEPOSIT_OP_RETURN_VERSION,
@@ -411,17 +410,10 @@ export {
   computeStealthDataHash,
   createTransferBoundParams,
   createUnshieldBoundParams,
-  createSuiUnshieldBoundParams,
   createRedeemBoundParams,
-  suiLengthPrefixedHash,
-  computeSuiStealthDataHash,
-  computeSuiTransferBoundParamsHash,
-  computeSuiUnshieldBoundParamsHash,
-  computeSuiRedeemBoundParamsHash,
   SOLANA_BOUND_CHAIN_ID,
   SOLANA_DEVNET_BOUND_CHAIN_ID,
   SOLANA_MAINNET_BOUND_CHAIN_ID,
-  SUI_BOUND_CHAIN_ID,
   DEFAULT_BOUND_PARAMS,
   type BoundParams,
   type BoundParamsMode,
@@ -796,7 +788,6 @@ export {
   parseSenderMemoEvent,
   parseBtcOriginAttestationEvent,
   parseAuditorCiphertextEvent,
-  auditorCiphertextFromSuiEventFields,
   EVENT_NULLIFIER_SPENT,
   EVENT_STEALTH_ANNOUNCEMENT,
   EVENT_NULLIFIERS_BATCH,

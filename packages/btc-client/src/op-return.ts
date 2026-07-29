@@ -3,7 +3,6 @@ import type { BitcoinTransaction, UtxopiaDepositOpReturn } from "./types";
 export const UTXOPIA_DEPOSIT_OP_RETURN_SIZE = 73;
 export const UTXOPIA_DEPOSIT_OP_RETURN_VERSION = 1;
 export const DESTINATION_CHAIN_SOLANA = 1;
-export const DESTINATION_CHAIN_SUI = 2;
 export const BITCOIN_NETWORK_MAINNET = 0;
 export const BITCOIN_NETWORK_TESTNET4 = 2;
 export const BITCOIN_NETWORK_REGTEST = 3;
@@ -49,7 +48,7 @@ export function decodeDepositHeader(header: number): {
   const destinationChain = (header >> 4) & 0x03;
   const bitcoinNetwork = header & 0x0f;
   if (version !== UTXOPIA_DEPOSIT_OP_RETURN_VERSION) return undefined;
-  if (destinationChain !== DESTINATION_CHAIN_SOLANA && destinationChain !== DESTINATION_CHAIN_SUI) return undefined;
+  if (destinationChain !== DESTINATION_CHAIN_SOLANA) return undefined;
   if (
     bitcoinNetwork !== BITCOIN_NETWORK_MAINNET
     && bitcoinNetwork !== BITCOIN_NETWORK_TESTNET4

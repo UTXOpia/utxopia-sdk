@@ -1,5 +1,5 @@
 /**
- * Tests for parseAuditorCiphertextEvent and auditorCiphertextFromSuiEventFields.
+ * Tests for parseAuditorCiphertextEvent.
  *
  * Method-Y permissioned-pool auditor-ciphertext event parsing (Task 3).
  */
@@ -9,7 +9,6 @@ import { ed25519GenerateKeyPair } from "../../src/crypto-ed25519";
 import { encryptAuditorCiphertext } from "../../src/auditor-ciphertext";
 import {
   parseAuditorCiphertextEvent,
-  auditorCiphertextFromSuiEventFields,
   EVENT_AUDITOR_CIPHERTEXT,
   type AuditorCiphertextEvent,
 } from "../../src/events";
@@ -133,75 +132,5 @@ describe("parseAuditorCiphertextEvent", () => {
       makeBlob(),
     ];
     expect(parseAuditorCiphertextEvent(segments)).toBeNull();
-  });
-});
-
-// =============================================================================
-// auditorCiphertextFromSuiEventFields
-// =============================================================================
-
-describe("auditorCiphertextFromSuiEventFields", () => {
-  test("normalizes number[] fields into Uint8Array and returns correct event", () => {
-    const blob = makeBlob();
-    const fields = {
-      commitment: Array.from(COMMITMENT),
-      auditor_ciphertext: Array.from(blob),
-    };
-
-    const event = auditorCiphertextFromSuiEventFields(fields);
-    expect(event).not.toBeNull();
-    expect(event!.type).toBe("auditor_ciphertext");
-    expect(event!.commitment).toEqual(COMMITMENT);
-    expect(event!.blob).toEqual(blob);
-  });
-
-  test("accepts Uint8Array fields directly", () => {
-    const blob = makeBlob();
-    const fields = {
-      commitment: COMMITMENT,
-      auditor_ciphertext: blob,
-    };
-
-    const event = auditorCiphertextFromSuiEventFields(fields);
-    expect(event).not.toBeNull();
-    expect(event!.commitment).toEqual(COMMITMENT);
-    expect(event!.blob).toEqual(blob);
-  });
-
-  test("falls back to note field when commitment is absent", () => {
-    const blob = makeBlob();
-    const fields = {
-      note: Array.from(COMMITMENT),
-      auditor_ciphertext: Array.from(blob),
-    };
-
-    const event = auditorCiphertextFromSuiEventFields(fields);
-    expect(event).not.toBeNull();
-    expect(event!.commitment).toEqual(COMMITMENT);
-  });
-
-  test("returns null when auditor_ciphertext has wrong length (111 bytes)", () => {
-    const fields = {
-      commitment: Array.from(COMMITMENT),
-      auditor_ciphertext: new Array(111).fill(0),
-    };
-    expect(auditorCiphertextFromSuiEventFields(fields)).toBeNull();
-  });
-
-  test("returns null when commitment has wrong length (31 bytes)", () => {
-    const blob = makeBlob();
-    const fields = {
-      commitment: new Array(31).fill(0),
-      auditor_ciphertext: Array.from(blob),
-    };
-    expect(auditorCiphertextFromSuiEventFields(fields)).toBeNull();
-  });
-
-  test("returns null when commitment is missing and note is absent", () => {
-    const blob = makeBlob();
-    const fields = {
-      auditor_ciphertext: Array.from(blob),
-    };
-    expect(auditorCiphertextFromSuiEventFields(fields)).toBeNull();
   });
 });

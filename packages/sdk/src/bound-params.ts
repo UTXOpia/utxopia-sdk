@@ -140,7 +140,7 @@ export function computeStealthDataHash(stealthData: Uint8Array[]): Uint8Array {
 /**
  * Compute the operation-specific bound parameters hash.
  *
- * This is the final public input for Sui. Solana callers must use
+ * Solana callers must wrap this with
  * `computeSolanaDomainBoundParamsHash()` to bind the program and pool.
  *
  * Deterministic serialization:
@@ -207,7 +207,6 @@ export const SOLANA_MAINNET_BOUND_CHAIN_ID = 101n;
 export const SOLANA_DEVNET_BOUND_CHAIN_ID = 103n;
 /** Backward-compatible devnet alias. Prefer the network-specific constants. */
 export const SOLANA_BOUND_CHAIN_ID = SOLANA_DEVNET_BOUND_CHAIN_ID;
-export const SUI_BOUND_CHAIN_ID = 784n;
 
 /**
  * Default bound params for Solana devnet (private transfer)
@@ -246,6 +245,12 @@ export const DEFAULT_BOUND_PARAMS: BoundParams = {
  * RedemptionRequest.requester); it is bound into the hash so the proof cannot be replayed
  * under a different signer.
  */
+function u32le(n: number): Uint8Array {
+  const b = new Uint8Array(4);
+  new DataView(b.buffer).setUint32(0, n >>> 0, true);
+  return b;
+}
+
 export function createRedeemBoundParams(
   btcScripts: Uint8Array | Uint8Array[],
   stealthDataHash: Uint8Array,
@@ -284,94 +289,6 @@ export function createRedeemBoundParams(
   };
 }
 
-/**
- * Create bound params for a Sui generic-coin unshield.
- *
- * Mirrors `bound_params::unshield_hash`: the 32-byte (BCS) recipient addresses are
- * concatenated and SHA256'd into the unshieldAddress slot, with the Sui domain chain id.
- * `recipients` are raw 32-byte big-endian Sui addresses; `stealthHash` is the
- * already-computed SHA256 of the concatenated stealth data (see computeStealthDataHash).
- */
-export function createSuiUnshieldBoundParams(
-  recipients: Uint8Array | Uint8Array[],
-  stealthHash: Uint8Array,
-): BoundParams {
-  return createUnshieldBoundParams(recipients, stealthHash, SUI_BOUND_CHAIN_ID);
-}
-
-// ---------------------------------------------------------------------------
-// Sui length-prefixed bound-params (audit #4 / #51–54).
-//
-// The Sui Move program (`bound_params.move`) binds list inputs (BTC scripts, stealth-data
-// entries, unshield recipients) with explicit boundaries so a proof can't be replayed with a
-// different partitioning of the same concatenated bytes. These helpers reproduce that exact
-// encoding and MUST stay byte-identical to the Move side (locked by tests in both languages).
-//
-// NOTE: this is Sui-only. Solana uses flat-concat operation hashes, then wraps the result with
-// `computeSolanaDomainBoundParamsHash` to bind the exact program and pool.
-// ---------------------------------------------------------------------------
-
-function u32le(n: number): Uint8Array {
-  const b = new Uint8Array(4);
-  new DataView(b.buffer).setUint32(0, n >>> 0, true);
-  return b;
-}
-
-/** sha256( u32le(count) || for each item [ u32le(len) || item ] ) — matches Move `length_prefixed_hash`. */
-export function suiLengthPrefixedHash(items: Uint8Array[]): Uint8Array {
-  const parts: Uint8Array[] = [u32le(items.length)];
-  for (const it of items) {
-    parts.push(u32le(it.length));
-    parts.push(it);
-  }
-  const total = parts.reduce((s, p) => s + p.length, 0);
-  const buf = new Uint8Array(total);
-  let off = 0;
-  for (const p of parts) {
-    buf.set(p, off);
-    off += p.length;
-  }
-  return sha256(buf);
-}
-
-/** SHA256 of the length-prefixed stealth-data list — matches Move `stealth_data_hash`. */
-export function computeSuiStealthDataHash(stealthData: Uint8Array[]): Uint8Array {
-  return suiLengthPrefixedHash(stealthData);
-}
-
-/**
- * Build the Sui bound-params hash (field element), matching Move `finalize`:
- *   payload = treeNumber(4=0) || flag(1) || addressSlot(32) || chainId_le(8) || stealthHash(32)
- *   result  = sha256(payload) mod BN254
- * flag: transfer=0, unshield=1, redeem=2.
- */
-function computeSuiBoundParamsHash(flag: number, addressSlot: Uint8Array, stealthHash: Uint8Array): bigint {
-  const buf = new Uint8Array(77);
-  buf[4] = flag;
-  buf.set(addressSlot.slice(0, 32), 5);
-  let cid = SUI_BOUND_CHAIN_ID;
-  for (let i = 0; i < 8; i++) {
-    buf[37 + i] = Number(cid & 0xffn);
-    cid >>= 8n;
-  }
-  buf.set(stealthHash.slice(0, 32), 45);
-  return bytesToBigint(sha256(buf)) % BN254_FIELD_PRIME;
-}
-
-/** Sui private-transfer bound-params hash. `stealthData` are the raw per-output stealth blobs. */
-export function computeSuiTransferBoundParamsHash(stealthData: Uint8Array[]): bigint {
-  return computeSuiBoundParamsHash(0, new Uint8Array(32), suiLengthPrefixedHash(stealthData));
-}
-
-/** Sui unshield bound-params hash. `recipients` are raw 32-byte (BCS) Sui addresses. */
-export function computeSuiUnshieldBoundParamsHash(recipients: Uint8Array[], stealthData: Uint8Array[]): bigint {
-  return computeSuiBoundParamsHash(1, suiLengthPrefixedHash(recipients), suiLengthPrefixedHash(stealthData));
-}
-
-/** Sui redeem bound-params hash. `btcScripts` are the per-output scriptPubKeys (bound with boundaries). */
-export function computeSuiRedeemBoundParamsHash(btcScripts: Uint8Array[], stealthData: Uint8Array[]): bigint {
-  return computeSuiBoundParamsHash(2, suiLengthPrefixedHash(btcScripts), suiLengthPrefixedHash(stealthData));
-}
 
 /**
  * Create bound params for an unshield (public withdrawal, multi-output)

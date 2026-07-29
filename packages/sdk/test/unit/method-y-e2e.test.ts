@@ -5,7 +5,6 @@ import {
   generateAuditorViewingKeypair,
   buildAuditorCiphertextForNote,
   parseAuditorCiphertextEvent,
-  auditorCiphertextFromSuiEventFields,
   EVENT_AUDITOR_CIPHERTEXT,
 } from "../../src/index";
 import { auditScan } from "../../src/auditor";
@@ -105,35 +104,4 @@ describe("Method-Y end-to-end round-trip", () => {
     expect(result.records.filter((r) => r.direction === "AUDITOR_VISIBLE")).toHaveLength(0);
   });
 
-  it("step 6 (Sui path): auditorCiphertextFromSuiEventFields normalizes number[] and decrypts through auditScan", async () => {
-    const auditor = generateAuditorViewingKeypair();
-    const blob = buildAuditorCiphertextForNote({
-      auditorViewingPubKey: auditor.pubKey,
-      tokenId: TOKEN_ID,
-      amount: AMOUNT,
-      commitment: COMMITMENT,
-    });
-
-    // Sui vector<u8> fields arrive as number[]
-    const suiEvent = auditorCiphertextFromSuiEventFields({
-      commitment: Array.from(COMMITMENT),
-      auditor_ciphertext: Array.from(blob),
-    });
-
-    expect(suiEvent).not.toBeNull();
-    expect(suiEvent!.type).toBe("auditor_ciphertext");
-    expect(suiEvent!.commitment).toEqual(COMMITMENT);
-    expect(suiEvent!.blob).toEqual(blob);
-
-    const result = await auditScan(delegated, [], {
-      tokenIds: [TOKEN_ID],
-      auditorCiphertexts: [{ commitment: suiEvent!.commitment, blob: suiEvent!.blob }],
-      auditorViewingPrivKey: auditor.privKey,
-    });
-
-    const visible = result.records.filter((r) => r.direction === "AUDITOR_VISIBLE");
-    expect(visible).toHaveLength(1);
-    expect(visible[0].tokenId).toBe(TOKEN_ID);
-    expect(visible[0].amount).toBe(AMOUNT);
-  });
 });

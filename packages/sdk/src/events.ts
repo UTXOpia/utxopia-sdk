@@ -314,35 +314,6 @@ export function parseAuditorCiphertextEvent(segments: Uint8Array[]): AuditorCiph
   return { type: "auditor_ciphertext", commitment, blob };
 }
 
-/**
- * Normalise an auditor-ciphertext Sui event JSON into an `AuditorCiphertextEvent`.
- *
- * Sui `vector<u8>` fields are deserialized as `number[]` in event JSON.
- * The field name is `auditor_ciphertext` (112-element array) and `commitment`
- * (32-element array, also present on `BtcDepositVerified` / `StealthAnnounced`).
- *
- * @param fields - Raw Sui event fields object.
- * @returns Parsed event, or null on any validation failure.
- */
-export function auditorCiphertextFromSuiEventFields(fields: {
-  commitment?: number[] | Uint8Array | null;
-  note?: number[] | Uint8Array | null;
-  auditor_ciphertext: number[] | Uint8Array;
-}): AuditorCiphertextEvent | null {
-  const rawBlob = fields.auditor_ciphertext;
-  if (!rawBlob) return null;
-  const blob = rawBlob instanceof Uint8Array ? rawBlob : new Uint8Array(rawBlob);
-  if (blob.length !== 112) return null;
-
-  // Accept either `commitment` or `note` as the 32-byte commitment field.
-  const rawCommitment = fields.commitment ?? fields.note ?? null;
-  if (!rawCommitment) return null;
-  const commitment =
-    rawCommitment instanceof Uint8Array ? rawCommitment : new Uint8Array(rawCommitment);
-  if (commitment.length !== 32) return null;
-
-  return { type: "auditor_ciphertext", commitment, blob };
-}
 
 function decodeBase64(b64: string): Uint8Array {
   const binary = atob(b64);

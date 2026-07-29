@@ -184,7 +184,7 @@ export class UTXOpiaClient {
   }
 
   /**
-   * Derive keys from a chain-specific auth signature, e.g. Sui personal-message signing.
+   * Derive keys from a chain-specific auth signature (wallet personal-message signing).
    */
   async loginWithAuthSignature(
     signature: Uint8Array,
@@ -576,10 +576,7 @@ export class UTXOpiaClient {
   }
 
   private defaultRelayUrl(): string {
-    const base = this._appNetworkId.startsWith("sui")
-      ? "/api/sui/relay"
-      : "/api/sol/relay";
-    return `${base}?network=${encodeURIComponent(this._appNetworkId)}`;
+    return `/api/sol/relay?network=${encodeURIComponent(this._appNetworkId)}`;
   }
 }
 

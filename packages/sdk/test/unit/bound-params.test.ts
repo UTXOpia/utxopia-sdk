@@ -7,59 +7,9 @@ import {
   computeStealthDataHash,
   createTransferBoundParams,
   createUnshieldBoundParams,
-  createSuiUnshieldBoundParams,
   createRedeemBoundParams,
-  computeSuiTransferBoundParamsHash,
-  computeSuiUnshieldBoundParamsHash,
-  computeSuiRedeemBoundParamsHash,
 } from "../../src/bound-params";
-import { poseidonHashSync, reduceToField } from "../../src/poseidon";
 import { bigintTo32Bytes } from "../../src/instructions";
-
-/**
- * Sui length-prefixed bound-params parity (audit #4 / #51–54). These 32-byte BE field
- * elements MUST equal the on-chain Move outputs, locked in:
- *   token_registry_tests::unshield_hash_matches_sdk_vector
- *   transact_tests::transfer_hash_matches_sdk_vector
- *   (redeem) bound_params length-prefixed encoding
- */
-describe("Sui length-prefixed bound-params (Move parity)", () => {
-  const beHex = (v: bigint) => v.toString(16).padStart(64, "0");
-  const addr32 = (hex: string) => {
-    const clean = hex.replace(/^0x/, "").padStart(64, "0");
-    const out = new Uint8Array(32);
-    for (let i = 0; i < 32; i++) out[i] = parseInt(clean.slice(i * 2, i * 2 + 2), 16);
-    return out;
-  };
-
-  it("transfer hash matches Move (stealth=[72×0x11])", () => {
-    const got = computeSuiTransferBoundParamsHash([new Uint8Array(72).fill(0x11)]);
-    expect(beHex(got)).toBe("089f78cb332df8a2af8c34e4bf4c8477daf60a38dd6eddd43b6161c4ff8ad9da");
-  });
-
-  it("unshield hash matches Move (recipients=[0xA11CE,0xB0B], stealth=[72×0x11])", () => {
-    const got = computeSuiUnshieldBoundParamsHash(
-      [addr32("A11CE"), addr32("B0B")],
-      [new Uint8Array(72).fill(0x11)],
-    );
-    expect(beHex(got)).toBe("25f18c980939dfacb79f4159fed02f10537abf0608d334c5d29dd9a9e3d5f3a5");
-  });
-
-  it("redeem hash matches Move (scripts=[34×0x51], stealth=[])", () => {
-    const got = computeSuiRedeemBoundParamsHash([new Uint8Array(34).fill(0x51)], []);
-    expect(beHex(got)).toBe("2f145c70b95e405aea4f325aed69eadb63a2a042f2c297c4a581c93fb6ce3dbb");
-  });
-
-  it("different script partitioning yields a different hash (the #4 fix)", () => {
-    // [AB] vs [A,B] with the same concatenated bytes must now differ.
-    const concat = computeSuiRedeemBoundParamsHash([new Uint8Array([0x51, 0x52, 0x53, 0x54])], []);
-    const split = computeSuiRedeemBoundParamsHash(
-      [new Uint8Array([0x51, 0x52]), new Uint8Array([0x53, 0x54])],
-      [],
-    );
-    expect(beHex(concat)).not.toBe(beHex(split));
-  });
-});
 
 /**
  * Cross-language parity tests — these test vectors must produce identical
@@ -85,44 +35,6 @@ describe("boundParamsHash cross-language parity", () => {
 
     // Must match Rust VECTOR_transfer (unchanged)
     expect(hashHex).toBe("06db1d31bd2ae34ed282aa200e61b183b67320420360c035d947c5263a21794d");
-  });
-
-  it("transfer: Sui chain_id=784, stealth=0x11*72 — matches Move transfer_hash", () => {
-    const stealth = new Uint8Array(72).fill(0x11);
-    const params = createTransferBoundParams(computeStealthDataHash([stealth]), 784n);
-    const hash = computeBoundParamsHash(params);
-    const hashHex = Array.from(bigintTo32Bytes(hash)).map(b => b.toString(16).padStart(2, "0")).join("");
-    // Pinned in sui-programs transact_tests::transfer_hash_matches_sdk_vector
-    expect(hashHex).toBe("00255687330aa6944333062dde58aef6c29c08f718af38804ab99d4616ada196");
-  });
-
-  it("sui unshield_hash + sui_token_id: matches Move token_registry_tests vectors", () => {
-    // Two test recipients as 32-byte big-endian Sui addresses (@0xA11CE, @0xB0B).
-    const suiAddr = (hex: string): Uint8Array => {
-      const out = new Uint8Array(32);
-      const h = hex.replace(/^0x/, "").padStart(64, "0");
-      for (let i = 0; i < 32; i++) out[i] = Number.parseInt(h.slice(i * 2, i * 2 + 2), 16);
-      return out;
-    };
-    const recipients = [suiAddr("A11CE"), suiAddr("B0B")];
-    const stealth = new Uint8Array(72).fill(0x11);
-    const stealthHash = computeStealthDataHash([stealth]);
-
-    const params = createSuiUnshieldBoundParams(recipients, stealthHash);
-    const hashHex = Array.from(bigintTo32Bytes(computeBoundParamsHash(params)))
-      .map((b) => b.toString(16).padStart(2, "0")).join("");
-    // Pinned in token_registry_tests::unshield_hash_matches_sdk_vector
-    expect(hashHex).toBe("07409ca23f284d6ce3cb9b26a898564117faa88a6dd496f926e1c340dd748b35");
-
-    // sui_token_id<SUI> = poseidon(reduce_to_field(sha2_256(typeName)), 0).
-    // typeName is the on-chain `type_name::get<SUI>().into_string()` for the test type.
-    const typeName =
-      "a5a0ff39f17b1eec14742c58a605257af9cbc677c5541cd63f103c6a09796cd8::token_registry_tests::SUI";
-    const tokenId = poseidonHashSync([reduceToField(sha256(new TextEncoder().encode(typeName))), 0n]);
-    // Pinned in token_registry_tests::sui_token_id_matches_sdk_vector
-    expect("0x" + tokenId.toString(16)).toBe(
-      "0xe94827c457076803d7e193e2c2a5c9cc9efcedf973cb850ca8452527840ea5d",
-    );
   });
 
   it("unshield: chain_id=103, address=0xAA*32, zero stealth (multi-output format)", () => {

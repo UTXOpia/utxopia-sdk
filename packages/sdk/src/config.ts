@@ -36,9 +36,7 @@ export function address(input: string): Address {
 export type NetworkType = "devnet" | "mainnet" | "localnet";
 export type AppNetworkId =
   | NetworkType
-  | "devnet-regtest"
-  | "sui-testnet"
-  | "sui-regtest";
+  | "devnet-regtest";
 
 export interface NetworkConfig {
   /** Network identifier */
@@ -430,8 +428,6 @@ function normalizeAppNetwork(network?: string): NetworkType {
       return "localnet";
     case "devnet":
     case "devnet-regtest":
-    case "sui-testnet":
-    case "sui-regtest":
     default:
       return "devnet";
   }
@@ -441,10 +437,8 @@ function bitcoinNetworkForAppNetwork(network?: string): NetworkConfig["bitcoinNe
   switch (network) {
     case "localnet":
     case "devnet-regtest":
-    case "sui-regtest":
       return "regtest";
     case "devnet":
-    case "sui-testnet":
       return "testnet4";
     case "mainnet":
       return "mainnet";

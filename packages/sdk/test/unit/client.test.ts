@@ -164,21 +164,6 @@ describe("UTXOpiaClient", () => {
 
       expect(fetchMock.mock.calls[0][0]).toBe("/api/sol/relay?network=devnet-regtest");
     });
-
-    it("defaults to the Sui relay route for Sui app networks", async () => {
-      const fetchMock = mock(async () => ({
-        json: async () => ({ success: true, signature: "sui_sig" }),
-      }));
-      globalThis.fetch = fetchMock as any;
-
-      const client = await UTXOpiaClient.init({ network: "sui-regtest" });
-      await expect(client.submitToRelay(minimalRelayPayload())).resolves.toEqual({
-        success: true,
-        signature: "sui_sig",
-      });
-
-      expect(fetchMock.mock.calls[0][0]).toBe("/api/sui/relay?network=sui-regtest");
-    });
   });
 });
 

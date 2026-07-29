@@ -74,9 +74,7 @@ const INSTRUCTION = {
   CANCEL_REDEMPTION: 19,
   // Tree management (20)
   ROTATE_TREE: 20,
-  // Proof of Innocence (21-22)
-  UPDATE_ASSOCIATION_ROOT: 21,
-  ATTEST_POI: 22,
+  // 21-23 are permissioned-pool ops — see PERMISSIONED_DISC
   APPROVE_REDEMPTION_SIGNING: 27,
   // Auditor-only setters (28-29) — utxopia program, permissioned pools
   SET_AUDITOR_FROZEN: 28,
@@ -93,9 +91,7 @@ const INSTRUCTION = {
 
 /**
  * Discriminants for permissioned-pool instructions (utxopia program only).
- * Disc 21, 22, 23 reuse the same numeric slots as the PoI instruction set
- * in a different program; the utxopia program assigns them to permissioned
- * pool ops — values must match programs/utxopia/src/lib.rs exactly.
+ * Values must match programs/utxopia/src/lib.rs exactly.
  */
 const PERMISSIONED_DISC = {
   INITIALIZE_PERMISSIONED: 21,

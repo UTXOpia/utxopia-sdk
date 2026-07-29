@@ -16,21 +16,9 @@ describe("SDK network config", () => {
     expect(config.esploraUrl).toBe("http://localhost:2140");
   });
 
-  it("maps Sui app networks to their Bitcoin side", async () => {
-    await initConfig({ network: "sui-testnet" });
-    expect(getConfig().network).toBe("devnet");
-    expect(getConfig().bitcoinNetwork).toBe("testnet4");
-    expect(getConfig().esploraUrl).toBe("https://mempool.space/testnet4/api");
-
-    await initConfig({ network: "sui-regtest" });
-    expect(getConfig().network).toBe("devnet");
-    expect(getConfig().bitcoinNetwork).toBe("regtest");
-    expect(getConfig().esploraUrl).toBe("http://localhost:2140");
-  });
-
   it("lets explicit BTC network env override the app network Bitcoin side", async () => {
     process.env.NEXT_PUBLIC_BTC_NETWORK = "mainnet";
-    await initConfig({ network: "sui-regtest" });
+    await initConfig({ network: "devnet-regtest" });
 
     expect(getConfig().bitcoinNetwork).toBe("mainnet");
     expect(getConfig().esploraUrl).toBe("https://mempool.space/api");
@@ -40,9 +28,5 @@ describe("SDK network config", () => {
     setConfig("devnet-regtest");
     expect(getConfig().network).toBe("devnet");
     expect(getConfig().bitcoinNetwork).toBe("regtest");
-
-    setConfig("sui-testnet");
-    expect(getConfig().network).toBe("devnet");
-    expect(getConfig().bitcoinNetwork).toBe("testnet4");
   });
 });

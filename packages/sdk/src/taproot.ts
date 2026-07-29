@@ -244,7 +244,6 @@ function arraysEqual(a: Uint8Array, b: Uint8Array): boolean {
 /** Destination chain encoded in the compact deposit OP_RETURN header. */
 export const DEPOSIT_DESTINATION_CHAIN = {
   SOLANA: 1,
-  SUI: 2,
 } as const;
 
 export type DepositDestinationChain =
@@ -328,7 +327,7 @@ export function encodeDepositOpReturnHeader(
   destinationChain: DepositDestinationChain,
   bitcoinNetwork: DepositBitcoinNetwork,
 ): number {
-  if (destinationChain !== DEPOSIT_DESTINATION_CHAIN.SOLANA && destinationChain !== DEPOSIT_DESTINATION_CHAIN.SUI) {
+  if (destinationChain !== DEPOSIT_DESTINATION_CHAIN.SOLANA) {
     throw new Error("invalid deposit destination chain");
   }
   if (
@@ -350,7 +349,7 @@ export function decodeDepositOpReturnHeader(header: number): {
   const destinationChain = (header >> 4) & 0x03;
   const bitcoinNetwork = header & 0x0f;
   if (version !== DEPOSIT_OP_RETURN_VERSION) return null;
-  if (destinationChain !== DEPOSIT_DESTINATION_CHAIN.SOLANA && destinationChain !== DEPOSIT_DESTINATION_CHAIN.SUI) {
+  if (destinationChain !== DEPOSIT_DESTINATION_CHAIN.SOLANA) {
     return null;
   }
   if (
@@ -383,29 +382,6 @@ export function computeDepositPoolTag(parts: Uint8Array[]): Uint8Array {
     offset += part.length;
   }
   return sha256(bytes).slice(0, DEPOSIT_POOL_TAG_SIZE);
-}
-
-/**
- * Compute the Sui deposit OP_RETURN pool tag.
- *
- * MUST match the on-chain `btc_deposit::expected_pool_tag`, which is bound to the POOL ONLY
- * (no commitment-tree component) so deposits survive a tree rotation:
- *
- *   sha256("UTXOPIA_SUI" || bcs(pool_id))[0..8]
- *
- * A Sui address (and a shared object id) serializes under BCS as its raw 32 bytes, so
- * `poolObjectId` is the 0x-prefixed 32-byte object id of the shared `Pool`.
- */
-export function computeSuiDepositPoolTag(poolObjectId: string): Uint8Array {
-  const clean = poolObjectId.startsWith("0x") ? poolObjectId.slice(2) : poolObjectId;
-  if (clean.length !== 64) {
-    throw new Error(`Sui pool object id must be 32 bytes (64 hex chars), got ${clean.length}`);
-  }
-  const idBytes = new Uint8Array(32);
-  for (let i = 0; i < 32; i++) {
-    idBytes[i] = parseInt(clean.slice(i * 2, i * 2 + 2), 16);
-  }
-  return computeDepositPoolTag([new TextEncoder().encode("UTXOPIA_SUI"), idBytes]);
 }
 
 /**

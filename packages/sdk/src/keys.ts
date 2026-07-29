@@ -122,7 +122,7 @@ export interface SerializedStealthMetaAddress {
 }
 
 export interface AuthSignatureKeyDerivationOptions {
-  /** Sui zkLogin address, wallet address, or app account label used as domain context. */
+  /** Wallet address or app account label used as domain context. */
   account?: string;
   /** Chain label used for domain separation. */
   chain?: string;
@@ -139,7 +139,7 @@ export interface AuthSignatureKeySetupResult {
 
 export const PASSKEY_CHAIN_SCOPE_DOMAIN = "utxopia-passkey-chain:v1";
 
-export type PasskeyChainScope = "sol" | "sui";
+export type PasskeyChainScope = "sol";
 
 export interface ChainScopedPasskeyOptions {
   chain: PasskeyChainScope;
@@ -1211,7 +1211,7 @@ function deriveAuthSignatureRoot(
 ): Uint8Array {
   const context = JSON.stringify({
     account: options.account ?? "",
-    chain: options.chain ?? "sui",
+    chain: options.chain ?? "sol",
     network: options.network ?? "testnet",
   });
   return sha256(
