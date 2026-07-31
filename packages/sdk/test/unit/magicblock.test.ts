@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test";
-import { AccountRole } from "@solana/kit";
+import { AccountRole, address } from "@solana/kit";
 import {
   DEVNET_CONFIG,
   MAGICBLOCK_DELEGATION_PROGRAM_ID,
@@ -21,6 +21,8 @@ import {
   buildMagicBlockDelegateInstructionData,
   buildMagicBlockPerPermissionInstructionData,
   buildPolicyRequestHash,
+  buildPolicyIntentParts,
+  buildRedeemInstructionData,
   buildInitializePolicyApprovalInstruction,
   buildPolicyApprovalDecisionInstruction,
   buildPolicyApprovalCommitInstruction,
@@ -105,12 +107,13 @@ describe("MagicBlock execution domains", () => {
   test("builds the one-time PolicyApproval lifecycle", async () => {
     const payer = DEVNET_CONFIG.utxopiaProgramId;
     const pool = DEVNET_CONFIG.poolStatePda;
-    const actionData = new Uint8Array([13, 1, 1, 0, 0]);
+    const nullifiers = new Uint8Array(32).fill(3);
     const requestHash = buildPolicyRequestHash({
       programId: payer,
       poolState: pool,
       actor: payer,
-      instructionData: actionData,
+      action: 13,
+      intentParts: [nullifiers],
     });
     const nonce = new Uint8Array(32).fill(7);
     const [approval] = await derivePolicyApprovalPDA(pool, requestHash, nonce);
@@ -404,5 +407,114 @@ describe("MagicBlock execution domains", () => {
     await expect(createMagicBlockRouterConnection(domain)).rejects.toThrow(
       "only for public ER"
     );
+  });
+});
+
+describe("policy request hash", () => {
+  /**
+   * Cross-implementation golden vector, shared with the asset program's
+   * `golden_vector_pins_the_preimage_across_implementations` and the backend
+   * coordinator's `request_hash_matches_the_shared_golden_vector`. If any of
+   * the three drifts, every Verified spend fails with PolicyApprovalMismatch
+   * and nothing else says why.
+   */
+  test("matches the shared golden vector", () => {
+    const bytes32 = (v: number) => new Uint8Array(32).fill(v);
+    // base58 of [1;32], [2;32], [3;32] — the same fixtures the Rust tests use.
+    const hash = buildPolicyRequestHash({
+      programId: address("4vJ9JU1bJJE96FWSJKvHsmmFADCg4gpZQff4P3bkLKi"),
+      poolState: address("8qbHbw2BbbTHBW1sbeqakYXVKRQM8Ne7pLK7m6CVfeR"),
+      actor: address("CktRuQ2mttgRGkXJtyksdKHjUdc2C4TgDzyB98oEzy8"),
+      action: 14,
+      intentParts: [
+        new Uint8Array(64).fill(9),
+        new Uint8Array([0, 0, 0, 0, 0, 0, 0, 1]),
+        bytes32(7),
+      ],
+    });
+    expect(Buffer.from(hash).toString("hex")).toBe(
+      "2107b88df0674b34fca97dbcd5504cdac884a7ecc28d77ae48be3440c07ce14b",
+    );
+  });
+
+  test("rejects an empty or oversized intent", () => {
+    const base = {
+      programId: DEVNET_CONFIG.utxopiaProgramId,
+      poolState: DEVNET_CONFIG.poolStatePda,
+      actor: DEVNET_CONFIG.utxopiaProgramId,
+      action: 14,
+    };
+    expect(() => buildPolicyRequestHash({ ...base, intentParts: [] })).toThrow();
+    expect(() =>
+      buildPolicyRequestHash({
+        ...base,
+        intentParts: [new Uint8Array(1), new Uint8Array(1), new Uint8Array(1), new Uint8Array(1)],
+      }),
+    ).toThrow();
+  });
+});
+
+describe("policy intent parts", () => {
+  const nullifiers = [new Uint8Array(32).fill(1), new Uint8Array(32).fill(2)];
+
+  test("transact commits to the spent notes only", () => {
+    const parts = buildPolicyIntentParts({ action: 13, nullifiers });
+    expect(parts.length).toBe(1);
+    expect(parts[0].length).toBe(64);
+  });
+
+  test("unshield commits to notes, amounts and recipient owners", () => {
+    const parts = buildPolicyIntentParts({
+      action: 14,
+      nullifiers,
+      unshieldAmounts: [1000n],
+      recipientOwners: [new Uint8Array(32).fill(7)],
+    });
+    expect(parts.length).toBe(3);
+    expect(Array.from(parts[1])).toEqual([232, 3, 0, 0, 0, 0, 0, 0]); // 1000 LE
+    expect(parts[2].length).toBe(32);
+  });
+
+  /**
+   * The redeem tail must be byte-identical to what the instruction encodes,
+   * because the program hashes the same trailing bytes it parses. Comparing
+   * against the instruction builder is the only check that catches drift.
+   */
+  test("redeem outputs match the instruction's trailing bytes", () => {
+    const btcScripts = [new Uint8Array([0x51, 0x20, 0xaa])];
+    const parts = buildPolicyIntentParts({
+      action: 15,
+      nullifiers,
+      redeemAmounts: [777n],
+      btcScripts,
+      requestNonces: [5n],
+    });
+    const ix = buildRedeemInstructionData({
+      nInputs: 2,
+      nOutputs: 1,
+      nPublicOutputs: 1,
+      merkleRoot: new Uint8Array(32),
+      boundParamsHash: new Uint8Array(32),
+      nullifiers,
+      commitmentsOut: [new Uint8Array(32)],
+      stealthData: [],
+      redeemAmounts: [777n],
+      btcScripts,
+      requestNonces: [5n],
+      proofSource: 1,
+    });
+    expect(Array.from(parts[1])).toEqual(Array.from(ix.slice(ix.length - parts[1].length)));
+  });
+
+  test("a mismatched redeem tuple is rejected", () => {
+    expect(() =>
+      buildPolicyIntentParts({
+        action: 15,
+        nullifiers,
+        redeemAmounts: [1n, 2n],
+        btcScripts: [new Uint8Array([1])],
+        requestNonces: [1n, 2n],
+      }),
+    ).toThrow();
   });
 });

@@ -42,6 +42,7 @@ export const PDA_SEEDS = {
   DEPOSIT: "deposit",
   NULLIFIER: "nullifier",
   POLICY_APPROVAL: "policy_approval",
+  EXIT_DESTINATION: "exit_destination",
   VK_REGISTRY: "vk_registry",
   TOKEN_CONFIG: "token_config",
   POOL_CONFIG: "pool_config",
@@ -161,6 +162,45 @@ export async function derivePolicyApprovalPDA(
       poolStateBytes,
       requestHash,
       nonce,
+    ],
+  });
+  return [result[0], result[1]];
+}
+
+/** Destination kinds in the exit registry. Kind is a PDA seed, so a Solana
+ *  owner and a BTC script hash sharing the same 32 bytes stay distinct. */
+export const EXIT_KIND_SOLANA_OWNER = 0;
+export const EXIT_KIND_BTC_SCRIPT = 1;
+
+/**
+ * Derive an ExitDestination PDA — the append-only registry of destinations a
+ * permissioned pool's ragequit path may pay.
+ *
+ * Seeds: ["exit_destination", pool_state, [kind], key]
+ *
+ * `key` is the recipient token account's OWNER for `EXIT_KIND_SOLANA_OWNER`,
+ * or `sha256(btcScript)` for `EXIT_KIND_BTC_SCRIPT`.
+ */
+export async function deriveExitDestinationPDA(
+  poolState: Address | Uint8Array,
+  kind: number,
+  key: Uint8Array,
+  programId: Address
+): Promise<[Address, number]> {
+  const poolStateBytes = seedBytes(poolState, "poolState");
+  if (key.length !== 32) {
+    throw new Error("exit destination key must be 32 bytes");
+  }
+  if (kind !== EXIT_KIND_SOLANA_OWNER && kind !== EXIT_KIND_BTC_SCRIPT) {
+    throw new Error("unknown exit destination kind");
+  }
+  const result = await getProgramDerivedAddress({
+    programAddress: programId,
+    seeds: [
+      new TextEncoder().encode(PDA_SEEDS.EXIT_DESTINATION),
+      poolStateBytes,
+      Uint8Array.of(kind),
+      key,
     ],
   });
   return [result[0], result[1]];

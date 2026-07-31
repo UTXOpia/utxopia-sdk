@@ -97,6 +97,7 @@ const PERMISSIONED_DISC = {
   INITIALIZE_PERMISSIONED: 21,
   COMPLETE_DEPOSIT_PERMISSIONED: 22,
   SHIELD_PERMISSIONED: 23,
+  REGISTER_EXIT_DESTINATION: 39,
 } as const;
 
 /** Export instruction discriminators for consumers */
@@ -1601,15 +1602,122 @@ export function buildMagicBlockPerPermissionInstruction(
 
 export type PolicyApprovalDecision = "approve" | "reject";
 
+/** Must match `MAX_INTENT_PARTS` in the asset program. */
+export const MAX_POLICY_INTENT_PARTS = 3;
+
+/**
+ * Build the intent parts a spend's policy approval commits to.
+ *
+ * The layout mirrors what the asset program hashes, and deliberately carries no
+ * proof machinery: the merkle root, output commitments and stealth data all move
+ * when a spend is re-proved, and a spend has to be re-proved whenever the root
+ * advances — which is exactly while the authority is deciding. Binding them
+ * would make every approval expire the moment someone else deposits.
+ *
+ * Amounts and BTC scripts are encoded exactly as the instruction encodes them,
+ * because the program hashes the same trailing bytes it parses.
+ */
+export function buildPolicyIntentParts(
+  options:
+    | { action: 13; nullifiers: Uint8Array[] }
+    | {
+        action: 14;
+        nullifiers: Uint8Array[];
+        unshieldAmounts: bigint[];
+        /** OWNER of each recipient token account — what the payout credits. */
+        recipientOwners: Uint8Array[];
+      }
+    | {
+        action: 15;
+        nullifiers: Uint8Array[];
+        redeemAmounts: bigint[];
+        btcScripts: Uint8Array[];
+        requestNonces: bigint[];
+      },
+): Uint8Array[] {
+  const nullifiers = concatBytes(options.nullifiers);
+
+  if (options.action === INSTRUCTION.TRANSACT) {
+    // An internal transfer reveals no amount and no external destination, so the
+    // only thing being decided is whether these notes may be spent at all.
+    return [nullifiers];
+  }
+
+  if (options.action === INSTRUCTION.UNSHIELD) {
+    const amounts = new Uint8Array(options.unshieldAmounts.length * 8);
+    const view = new DataView(amounts.buffer);
+    options.unshieldAmounts.forEach((amount, i) => view.setBigUint64(i * 8, amount, true));
+    for (const owner of options.recipientOwners) {
+      if (owner.length !== 32) throw new Error("recipient owner must be 32 bytes");
+    }
+    return [nullifiers, amounts, concatBytes(options.recipientOwners)];
+  }
+
+  // redeem: amount(8) + script_len(1) + script(var) + nonce(8), per output
+  const { redeemAmounts, btcScripts, requestNonces } = options;
+  if (redeemAmounts.length !== btcScripts.length || btcScripts.length !== requestNonces.length) {
+    throw new Error("redeem amounts, scripts and nonces must be the same length");
+  }
+  const size = redeemAmounts.length * 17 + btcScripts.reduce((n, s) => n + s.length, 0);
+  const outputs = new Uint8Array(size);
+  const view = new DataView(outputs.buffer);
+  let offset = 0;
+  for (let k = 0; k < redeemAmounts.length; k++) {
+    view.setBigUint64(offset, redeemAmounts[k], true);
+    offset += 8;
+    outputs[offset++] = btcScripts[k].length;
+    outputs.set(btcScripts[k], offset);
+    offset += btcScripts[k].length;
+    view.setBigUint64(offset, requestNonces[k], true);
+    offset += 8;
+  }
+  return [nullifiers, outputs];
+}
+
+function concatBytes(chunks: Uint8Array[]): Uint8Array {
+  const out = new Uint8Array(chunks.reduce((n, c) => n + c.length, 0));
+  let offset = 0;
+  for (const chunk of chunks) {
+    out.set(chunk, offset);
+    offset += chunk.length;
+  }
+  return out;
+}
+
+/**
+ * Mirror of `compute_policy_request_hash` in the asset program.
+ *
+ * The approval commits to what the authority decides — which notes are spent,
+ * how much leaves, and where it goes — never to the whole instruction. Binding
+ * the payload would tie an approval to one exact proof, and a spend has to be
+ * re-proved whenever the merkle root moves on, which is precisely while the
+ * authority is deciding.
+ *
+ * Parts, in the order the program hashes them:
+ * - `transact`: [nullifiers]
+ * - `unshield`: [nullifiers, amounts, recipientOwners]
+ * - `redeem`:   [nullifiers, amountsScriptsAndNonces]
+ * - value entry (`shield` / `completeDeposit`): [instructionDataWithoutDiscriminator]
+ *
+ * Each part is folded to a fixed 32 bytes before the parts are joined, so their
+ * boundaries cannot be slid. Any drift from the on-chain version makes every
+ * Verified spend fail with PolicyApprovalMismatch.
+ */
 export function buildPolicyRequestHash(options: {
   programId: Address;
   poolState: Address;
   actor: Address;
-  /** Complete instruction data including its discriminator. */
-  instructionData: Uint8Array;
+  /** Discriminator of the asset instruction this approval covers. */
+  action: number;
+  intentParts: Uint8Array[];
 }): Uint8Array {
-  if (options.instructionData.length < 1) {
-    throw new Error("Policy-bound instruction data cannot be empty");
+  if (
+    options.intentParts.length < 1 ||
+    options.intentParts.length > MAX_POLICY_INTENT_PARTS
+  ) {
+    throw new Error(
+      `Policy intent must have 1-${MAX_POLICY_INTENT_PARTS} parts`,
+    );
   }
   const domain = new TextEncoder().encode("UTXOPIA_POLICY_APPROVAL_V1");
   const chunks = [
@@ -1617,8 +1725,9 @@ export function buildPolicyRequestHash(options: {
     addressToBytes(options.programId),
     addressToBytes(options.poolState),
     addressToBytes(options.actor),
-    options.instructionData.slice(0, 1),
-    options.instructionData.slice(1),
+    Uint8Array.of(options.action),
+    Uint8Array.of(options.intentParts.length),
+    ...options.intentParts.map((part) => sha256(part)),
   ];
   const length = chunks.reduce((total, chunk) => total + chunk.length, 0);
   const preimage = new Uint8Array(length);
@@ -2290,6 +2399,16 @@ export interface ShieldPermissionedInstructionOptions {
     tokenProgram: Address;
     /** 7. one-time PolicyApproval (writable) */
     policyApproval: Address;
+    /**
+     * 9. ExitDestination PDA registered for `user`.
+     *
+     * Value cannot enter without a way back out: the program refuses a
+     * depositor who has no registered exit, so they can always ragequit to
+     * their own wallet without the auditor. Derive with
+     * {@link deriveExitDestinationPDA} using `EXIT_KIND_SOLANA_OWNER` and the
+     * depositor's address.
+     */
+    exitDestination: Address;
   };
 }
 
@@ -2329,8 +2448,7 @@ export function buildShieldPermissionedInstructionData(options: {
 /**
  * Build a complete shieldPermissioned instruction (disc=23).
  *
- * Same accounts as shield (disc=12), plus a one-time PolicyApproval appended at
- * account index 7.
+ * Same accounts as shield (disc=12), plus three appended.
  *
  * Accounts:
  * 0. user              (writable signer)
@@ -2341,6 +2459,8 @@ export function buildShieldPermissionedInstructionData(options: {
  * 5. commitment_tree   (writable)
  * 6. token_program     (readonly)
  * 7. policy_approval   (writable)
+ * 8. policy_program    (readonly)
+ * 9. exit_destination  (readonly) — the depositor's registered exit
  */
 export function buildShieldPermissionedInstruction(
   options: ShieldPermissionedInstructionOptions,
@@ -2365,6 +2485,72 @@ export function buildShieldPermissionedInstruction(
       { address: options.accounts.tokenProgram,     role: AccountRole.READONLY },
       { address: options.accounts.policyApproval,   role: AccountRole.WRITABLE },
       { address: config.policyProgramId ?? config.utxopiaProgramId, role: AccountRole.READONLY },
+      { address: options.accounts.exitDestination,  role: AccountRole.READONLY },
+    ],
+    data,
+  };
+}
+
+// ---------------------------------------------------------------------------
+// registerExitDestination (disc=39)
+// ---------------------------------------------------------------------------
+
+/**
+ * Build a registerExitDestination instruction (disc=39) — auditor-only.
+ *
+ * Adds one entry to a permissioned pool's append-only exit registry. Entries can
+ * be added but never removed: a removable entry would hand the auditor back the
+ * ability to prevent a withdrawal, which is the one power the design withholds.
+ *
+ * Register a depositor's address BEFORE their first `shieldPermissioned` — the
+ * program refuses a depositor who has no exit.
+ *
+ * Data:     kind(1) + key(32)
+ * Accounts: 0. auditor (writable signer, pays rent)
+ *           1. pool_state (readonly)
+ *           2. exit_destination PDA (writable, uninitialized)
+ *           3. system_program (readonly)
+ */
+/**
+ * Build registerExitDestination instruction data (disc=39).
+ *
+ * Layout: disc(1) + kind(1) + key(32)
+ */
+export function buildRegisterExitDestinationInstructionData(options: {
+  kind: number;
+  key: Uint8Array;
+}): Uint8Array {
+  if (options.key.length !== 32) {
+    throw new Error("exit destination key must be 32 bytes");
+  }
+  const data = new Uint8Array(34);
+  data[0] = PERMISSIONED_DISC.REGISTER_EXIT_DESTINATION;
+  data[1] = options.kind;
+  data.set(options.key, 2);
+  return data;
+}
+
+export function buildRegisterExitDestinationInstruction(options: {
+  /** `EXIT_KIND_SOLANA_OWNER` or `EXIT_KIND_BTC_SCRIPT`. */
+  kind: number;
+  /** Recipient token account owner, or sha256(btcScript). */
+  key: Uint8Array;
+  accounts: {
+    auditor: Address;
+    poolState: Address;
+    exitDestination: Address;
+  };
+}): Instruction {
+  const config = getConfig();
+  const data = buildRegisterExitDestinationInstructionData(options);
+
+  return {
+    programAddress: config.utxopiaProgramId,
+    accounts: [
+      { address: options.accounts.auditor,         role: AccountRole.WRITABLE_SIGNER },
+      { address: options.accounts.poolState,       role: AccountRole.READONLY },
+      { address: options.accounts.exitDestination, role: AccountRole.WRITABLE },
+      { address: SYSTEM_PROGRAM_ADDRESS,           role: AccountRole.READONLY },
     ],
     data,
   };
