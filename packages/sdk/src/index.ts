@@ -450,6 +450,23 @@ export {
 
 export {
   PDA_SEEDS,
+  // Seed builders — the single definition of every PDA. Consumers on
+  // @solana/web3.js should derive from these with findProgramAddressSync rather
+  // than restating the seeds, which is how copies drift from the program.
+  poolStateSeeds,
+  commitmentTreeSeeds,
+  tokenConfigSeeds,
+  poolConfigSeeds,
+  nullifierRecordSeeds,
+  redemptionRequestSeeds,
+  vkRegistrySeeds,
+  depositReceiptSeeds,
+  policyApprovalSeeds,
+  exitDestinationSeeds,
+  lightClientSeeds,
+  blockHeaderSeeds,
+  heightIndexSeeds,
+  verifiedTransactionSeeds,
   derivePoolStatePDA,
   deriveCommitmentTreePDA,
   deriveNullifierRecordPDA,
