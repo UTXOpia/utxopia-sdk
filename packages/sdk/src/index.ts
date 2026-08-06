@@ -445,6 +445,23 @@ export {
 } from "./config";
 
 // ==========================================================================
+// PoolState account layout + fee arithmetic
+// ==========================================================================
+
+export {
+  POOL_STATE_DISCRIMINATOR,
+  POOL_STATE_LEN,
+  POOL_STATE_OFFSETS,
+  POOL_FLAG,
+  parsePoolState,
+  parsePoolFees,
+  BPS_DENOMINATOR,
+  computeBpsFee,
+  feeShareBps,
+} from "./pool-state";
+export type { PoolState, PoolFees } from "./pool-state";
+
+// ==========================================================================
 // PDA Derivation
 // ==========================================================================
 
