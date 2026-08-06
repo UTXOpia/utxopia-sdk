@@ -128,15 +128,44 @@ export async function derivePoolConfigPDA(
 }
 
 /**
- * Derive Nullifier Record PDA
+ * Derive Nullifier Record PDA.
+ *
+ * Seeds are `["nullifier", pool_state, nullifier]` on tree 0, and
+ * `["nullifier", pool_state, tree_index_le, nullifier]` on any tree a rotation
+ * created. Both scopes exist because a nullifier is Poseidon(nullifyingKey,
+ * leafIndex) and so identifies a note only within one pool and one tree:
+ *
+ *  - Without the pool, the same seed spending into two vaults derives one PDA,
+ *    and spending in either strands the twin note in the other.
+ *  - Without the tree, the same happens across a rotation, because leaf indices
+ *    restart at 0 in every new tree.
+ *
+ * Tree 0 keeps the shorter seeds so the records already on chain stay reachable
+ * — re-deriving them would make every already-spent note spendable again.
  */
 export async function deriveNullifierRecordPDA(
   nullifierHash: Uint8Array,
+  poolState: Address | Uint8Array,
+  treeIndex = 0,
   programId: Address = UTXOPIA_PROGRAM_ID
 ): Promise<[Address, number]> {
+  const poolStateBytes = seedBytes(poolState, "poolState");
+  if (!Number.isInteger(treeIndex) || treeIndex < 0 || treeIndex > 0xffffffff) {
+    throw new Error(`treeIndex must be a u32, got ${treeIndex}`);
+  }
+  const seeds: Uint8Array[] = [
+    new TextEncoder().encode(PDA_SEEDS.NULLIFIER),
+    poolStateBytes,
+  ];
+  if (treeIndex !== 0) {
+    const idx = new Uint8Array(4);
+    new DataView(idx.buffer).setUint32(0, treeIndex, true);
+    seeds.push(idx);
+  }
+  seeds.push(nullifierHash);
   const result = await getProgramDerivedAddress({
     programAddress: programId,
-    seeds: [new TextEncoder().encode(PDA_SEEDS.NULLIFIER), nullifierHash],
+    seeds,
   });
   return [result[0], result[1]];
 }
