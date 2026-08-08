@@ -235,6 +235,43 @@ bun run build
 bun test
 ```
 
+## Verify it yourself: rebuild the tree from chain
+
+Spending a note needs a Merkle proof, and a Merkle proof needs the whole leaf
+set — which normally comes from our indexer. If the leaves weren't recoverable
+from the chain itself, "you can exit without the operator" would be a promise
+rather than a property.
+
+This script rebuilds a pool's entire leaf set from Solana transaction logs and
+checks the result against the root the program is verifying against. It talks to
+a public RPC endpoint and nothing else — no backend, no indexer, no API key:
+
+```bash
+TREE=<commitment-tree-pda> bun run scripts/rebuild-tree-from-chain.ts
+```
+
+```
+on-chain: 123 leaves, root 2994f7d670d12cd8dcbd89af708ff55f9e877bbb387aac4cf09e688a615650ce
+  134/134 scanned, 123 leaves
+recovered 123/123 leaves from logs
+rebuilt:  123 leaves, root 2994f7d670d12cd8dcbd89af708ff55f9e877bbb387aac4cf09e688a615650ce
+
+MATCH — the leaf set is recoverable from chain alone
+```
+
+It exits non-zero on a mismatch or on missing leaves, so it works as a check in
+CI as well as by hand.
+
+| Env | Default | |
+|---|---|---|
+| `RPC` | devnet | Any Solana RPC endpoint |
+| `TREE` | `DEVNET_CONFIG.commitmentTreePda` | Commitment tree PDA to rebuild |
+| `EPOCH_SIG` | — | Tree's `INITIALIZE` signature. Optional; set it to skip a dead epoch if the PDA was closed and recreated |
+| `PACE_MS` | `120` | Delay between requests. Raise it if your endpoint throttles you |
+
+Public endpoints rate-limit this scan aggressively — the script paces itself and
+backs off, so expect it to take a minute or two rather than to fail.
+
 ## License
 
 MIT
