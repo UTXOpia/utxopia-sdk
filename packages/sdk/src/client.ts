@@ -37,8 +37,8 @@ import {
   type KeySetupResult,
 } from "./keys";
 import {
-  scanUnifiedNotes,
-  scanAnnouncementsViewOnly,
+  scanUnifiedNotesMulti,
+  scanAnnouncementsViewOnlyMulti,
   computeNullifierHashForNote,
   computeNullifierBytes,
   isDepositForViewerHex,
@@ -317,11 +317,11 @@ export class UTXOpiaClient {
     const client = this.getEventClient();
     const announcements = await client.fetchAll();
 
-    // Scan for each token
+    // One trial-decrypt per announcement, tested against every token id — not
+    // one full scan pass per token.
     const config = getConfig();
     type ScannedWithToken = (ScannedNote | ViewOnlyScannedNote) & { tokenSymbol: string };
-    const scanned: ScannedWithToken[] = [];
-    const seenLeaves = new Set<number>();
+    const symbolByTokenId = new Map<bigint, string>();
 
     for (const token of tokens) {
       let mint = token.mint;
@@ -329,20 +329,20 @@ export class UTXOpiaClient {
         mint = config.zkbtcMint;
       }
       if (!mint) continue;
-
       const tokenId = this.getTokenId(mint);
-
-      const results = this._isViewOnly && this._viewOnlyKeys
-        ? await scanAnnouncementsViewOnly(this._viewOnlyKeys, announcements, tokenId)
-        : await scanUnifiedNotes(this._keys!, announcements, tokenId);
-
-      for (const note of results) {
-        if (!seenLeaves.has(note.leafIndex)) {
-          seenLeaves.add(note.leafIndex);
-          scanned.push({ ...note, tokenSymbol: token.shieldedSymbol } as ScannedWithToken);
-        }
-      }
+      // First token wins the id, matching the old loop's dedup order.
+      if (!symbolByTokenId.has(tokenId)) symbolByTokenId.set(tokenId, token.shieldedSymbol);
     }
+
+    const tokenIds = [...symbolByTokenId.keys()];
+    const matches = this._isViewOnly && this._viewOnlyKeys
+      ? await scanAnnouncementsViewOnlyMulti(this._viewOnlyKeys, announcements, tokenIds)
+      : await scanUnifiedNotesMulti(this._keys!, announcements, tokenIds);
+
+    const scanned: ScannedWithToken[] = matches.map((note) => ({
+      ...note,
+      tokenSymbol: symbolByTokenId.get(note.tokenId)!,
+    }) as ScannedWithToken);
 
     // Convert to InboxNote format
     return scanned.map((note, index) => {

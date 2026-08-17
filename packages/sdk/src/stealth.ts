@@ -667,6 +667,32 @@ export interface ViewOnlyScannedNote {
 }
 
 /**
+ * Scan announcements with VIEW-ONLY keys against SEVERAL token ids in one pass.
+ * Same one-ECDH-per-announcement economics as {@link scanUnifiedNotesMulti}.
+ */
+export async function scanAnnouncementsViewOnlyMulti(
+  viewOnlyKeys: ViewOnlyKeys,
+  announcements: {
+    announcementType: number;
+    ephemeralPub: Uint8Array;
+    encryptedAmount: Uint8Array;
+    commitment: Uint8Array;
+    leafIndex: number;
+    blockTime?: number;
+  }[],
+  tokenIds: bigint[],
+): Promise<Array<ViewOnlyScannedNote & { tokenId: bigint }>> {
+  return matchAnnouncements(viewOnlyKeys, announcements, tokenIds).map((match) => ({
+    amount: match.amount,
+    leafIndex: match.announcement.leafIndex,
+    commitment: match.commitment,
+    ephemeralPub: match.announcement.ephemeralPub,
+    blockTime: match.announcement.blockTime ?? 0,
+    tokenId: match.tokenId,
+  }));
+}
+
+/**
  * Scan announcements with VIEW-ONLY keys.
  * Latest announcement rows must carry an explicit type.
  */
@@ -682,64 +708,7 @@ export async function scanAnnouncementsViewOnly(
   }[],
   tokenId: bigint,
 ): Promise<ViewOnlyScannedNote[]> {
-  const found: ViewOnlyScannedNote[] = [];
-  const MAX_SATS = 21_000_000n * 100_000_000n;
-
-  const mpk = computeMPKSync(
-    viewOnlyKeys.spendingPubKey.x,
-    viewOnlyKeys.spendingPubKey.y,
-    viewOnlyKeys.nullifyingKey
-  );
-
-  for (const ann of announcements) {
-    try {
-      if (!isKnownAnnouncementType(ann.announcementType)) {
-        continue;
-      }
-
-      const sharedSecret = x25519Ecdh(viewOnlyKeys.viewingPrivKey, ann.ephemeralPub);
-
-      // Get amount based on announcement type
-      let amount: bigint;
-      if (ann.announcementType === ANNOUNCEMENT_TYPE_DEPOSIT) {
-        const view = new DataView(ann.encryptedAmount.buffer, ann.encryptedAmount.byteOffset, 8);
-        amount = view.getBigUint64(0, true);
-      } else {
-        amount = decryptAmount(ann.encryptedAmount, sharedSecret);
-      }
-
-      if (amount <= 0n || amount > MAX_SATS) {
-        continue;
-      }
-
-      const stealthScalar = deriveStealthScalar(sharedSecret);
-      const npk = computeNPKSync(mpk, stealthScalar);
-      const expectedCommitment = computeJoinSplitCommitmentSync(npk, tokenId, amount);
-      const actualCommitment = bytesToBigint(ann.commitment);
-
-      // Verify commitment for both deposits and transfers (filters phantom notes).
-      if (expectedCommitment !== actualCommitment) {
-        continue;
-      }
-
-      found.push({
-        amount,
-        leafIndex: ann.leafIndex,
-        commitment: ann.announcementType === ANNOUNCEMENT_TYPE_DEPOSIT
-          ? bigintToBytes(expectedCommitment)
-          : new Uint8Array(ann.commitment),
-        ephemeralPub: ann.ephemeralPub,
-        blockTime: ann.blockTime ?? 0,
-      });
-    } catch (error) {
-      if (error instanceof TypeError || error instanceof RangeError) {
-        throw error;
-      }
-      continue;
-    }
-  }
-
-  return found;
+  return scanAnnouncementsViewOnlyMulti(viewOnlyKeys, announcements, [tokenId]);
 }
 
 /**
@@ -838,28 +807,54 @@ export async function prepareClaimInputs(
 
 // ========== Unified Note Scanning ==========
 
+/** Announcement shape the scanners need. Wider than OnChainStealthAnnouncement
+ *  so view-only callers can pass their own rows. */
+interface ScannableAnnouncement {
+  announcementType: number;
+  ephemeralPub: Uint8Array;
+  encryptedAmount: Uint8Array;
+  commitment: Uint8Array;
+  leafIndex: number;
+  blockTime?: number;
+}
+
+/** What a scan recovers before it is shaped into a note. */
+interface AnnouncementMatch {
+  announcement: ScannableAnnouncement;
+  amount: bigint;
+  tokenId: bigint;
+  commitment: Uint8Array;
+  sharedSecret: Uint8Array;
+}
+
+const MAX_SATS = 21_000_000n * 100_000_000n;
+
 /**
- * Scan unified StealthAnnouncement notes (both deposits and transfers).
+ * Trial-decrypt each announcement ONCE and test the result against every token
+ * id, instead of redoing the whole derivation per token.
  *
- * For each announcement:
- * - type=0 (deposit): amount is plaintext u64 LE in amount_bytes
- * - type=1 (transfer): amount is XOR-encrypted in amount_bytes
+ * Everything up to the commitment — the x25519 ECDH, the amount, the stealth
+ * scalar, the NPK — is token-independent; only the closing
+ * Poseidon(npk, tokenId, amount) comparison is not. Scanning T tokens the naive
+ * way therefore paid T ECDHs per announcement to answer one question, and the
+ * ECDH is the expensive half.
  *
- * Commitment is computed locally: Poseidon(npk, tokenId, amount).
- * For deposits, we verify the derived NPK produces a valid commitment.
- * For transfers, we verify the decrypted amount is in a valid range.
+ * A commitment binds exactly one token id, so the first match wins and the
+ * remaining ids are skipped.
  */
-export async function scanUnifiedNotes(
-  source: WalletSignerAdapter | UTXOpiaKeys,
-  announcements: OnChainStealthAnnouncement[],
-  tokenId: bigint,
-): Promise<ScannedNote[]> {
-  const keys = isWalletAdapter(source) ? await deriveKeysFromWallet(source) : source;
+function matchAnnouncements(
+  viewKeys: ViewOnlyKeys,
+  announcements: ScannableAnnouncement[],
+  tokenIds: bigint[],
+): AnnouncementMatch[] {
+  if (tokenIds.length === 0) return [];
 
-  const found: ScannedNote[] = [];
-  const MAX_SATS = 21_000_000n * 100_000_000n;
-
-  const mpk = computeMPKSync(keys.spendingPubKey.x, keys.spendingPubKey.y, keys.nullifyingKey);
+  const matches: AnnouncementMatch[] = [];
+  const mpk = computeMPKSync(
+    viewKeys.spendingPubKey.x,
+    viewKeys.spendingPubKey.y,
+    viewKeys.nullifyingKey,
+  );
 
   for (const ann of announcements) {
     try {
@@ -867,8 +862,8 @@ export async function scanUnifiedNotes(
         continue;
       }
 
-      // X25519 ECDH with viewing key
-      const sharedSecret = x25519Ecdh(keys.viewingPrivKey, ann.ephemeralPub);
+      // X25519 ECDH with viewing key — once per announcement, not per token
+      const sharedSecret = x25519Ecdh(viewKeys.viewingPrivKey, ann.ephemeralPub);
 
       // Get amount based on type
       let amount: bigint;
@@ -885,35 +880,30 @@ export async function scanUnifiedNotes(
         continue;
       }
 
-      // Derive stealth scalar and expected NPK + commitment (computed locally)
+      // Derive stealth scalar and expected NPK (computed locally)
       const stealthScalar = deriveStealthScalar(sharedSecret);
       const npk = computeNPKSync(mpk, stealthScalar);
-      const commitmentBigint = computeJoinSplitCommitmentSync(npk, tokenId, amount);
+      const onChain = bytesToBigint(ann.commitment);
 
-      // Verify the recomputed commitment against the on-chain one for BOTH
-      // deposits and transfers — a foreign transfer whose XOR-decrypted amount
-      // lands in range would otherwise become a phantom note.
-      if (commitmentBigint !== bytesToBigint(ann.commitment)) {
-        continue;
+      for (const tokenId of tokenIds) {
+        // Verify the recomputed commitment against the on-chain one for BOTH
+        // deposits and transfers — a foreign transfer whose XOR-decrypted amount
+        // lands in range would otherwise become a phantom note.
+        const commitmentBigint = computeJoinSplitCommitmentSync(npk, tokenId, amount);
+        if (commitmentBigint !== onChain) continue;
+
+        matches.push({
+          announcement: ann,
+          amount,
+          tokenId,
+          // Use on-chain commitment bytes for transfers (preserves exact on-chain value)
+          commitment: ann.announcementType === ANNOUNCEMENT_TYPE_DEPOSIT
+            ? bigintToBytes(commitmentBigint)
+            : new Uint8Array(ann.commitment),
+          sharedSecret,
+        });
+        break;
       }
-
-      // Convert commitment bigint to bytes for the ScannedNote
-      // Use on-chain commitment bytes for transfers (preserves exact on-chain value)
-      const commitmentBytes = ann.announcementType === ANNOUNCEMENT_TYPE_DEPOSIT
-        ? bigintToBytes(commitmentBigint)
-        : new Uint8Array(ann.commitment);
-
-      // Derive stealth public key (for spending)
-      const stealthPub = deriveStealthPubKey(keys.spendingPubKey, sharedSecret);
-
-      found.push({
-        amount,
-        ephemeralPub: ann.ephemeralPub,
-        stealthPub,
-        leafIndex: ann.leafIndex,
-        commitment: commitmentBytes,
-        blockTime: ann.blockTime ?? 0,
-      });
     } catch (error) {
       if (error instanceof TypeError || error instanceof RangeError) {
         throw error;
@@ -922,7 +912,54 @@ export async function scanUnifiedNotes(
     }
   }
 
-  return found;
+  return matches;
+}
+
+/** A note found by a multi-token scan, tagged with the token id it matched. */
+export type MultiScannedNote = ScannedNote & { tokenId: bigint };
+
+/**
+ * Scan unified StealthAnnouncement notes (both deposits and transfers) against
+ * SEVERAL token ids in one pass.
+ *
+ * Prefer this over calling {@link scanUnifiedNotes} once per token: the cost is
+ * one ECDH per announcement either way, plus one Poseidon per token id tried.
+ */
+export async function scanUnifiedNotesMulti(
+  source: WalletSignerAdapter | UTXOpiaKeys,
+  announcements: OnChainStealthAnnouncement[],
+  tokenIds: bigint[],
+): Promise<MultiScannedNote[]> {
+  const keys = isWalletAdapter(source) ? await deriveKeysFromWallet(source) : source;
+
+  return matchAnnouncements(exportViewOnlyKeys(keys), announcements, tokenIds).map((match) => ({
+    amount: match.amount,
+    ephemeralPub: match.announcement.ephemeralPub,
+    // Stealth public key, for spending
+    stealthPub: deriveStealthPubKey(keys.spendingPubKey, match.sharedSecret),
+    leafIndex: match.announcement.leafIndex,
+    commitment: match.commitment,
+    blockTime: match.announcement.blockTime ?? 0,
+    tokenId: match.tokenId,
+  }));
+}
+
+/**
+ * Scan unified StealthAnnouncement notes (both deposits and transfers).
+ *
+ * For each announcement:
+ * - type=0 (deposit): amount is plaintext u64 LE in amount_bytes
+ * - type=1 (transfer): amount is XOR-encrypted in amount_bytes
+ *
+ * Commitment is computed locally: Poseidon(npk, tokenId, amount) and compared
+ * against the on-chain one, which is what proves the note is ours.
+ */
+export async function scanUnifiedNotes(
+  source: WalletSignerAdapter | UTXOpiaKeys,
+  announcements: OnChainStealthAnnouncement[],
+  tokenId: bigint,
+): Promise<ScannedNote[]> {
+  return scanUnifiedNotesMulti(source, announcements, [tokenId]);
 }
 
 // ========== Connection Adapter ==========
