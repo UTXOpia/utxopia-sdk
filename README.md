@@ -88,7 +88,7 @@ The prefix tells you what a call costs, so you can read an import list without o
 | `get*` | reads local or already-fetched state — synchronous |
 | `parse*` | bytes in, typed object out; no IO |
 | `build*InstructionData` / `build*Instruction` | encode instruction data / assemble the full instruction |
-| `compute*Sync` | Poseidon and friends; the bare form is an async wrapper over the same thing |
+| `compute*Sync` | Poseidon hashes. Only the `Sync` form exists — poseidon-lite has nothing to await |
 | `encode`/`decode`, `pack`/`unpack`, `serialize`/`deserialize` | symmetric pairs, always both directions |
 
 `PDA` is spelled in caps. Seven MagicBlock helpers used to say `Pda` and two RPC calls were named

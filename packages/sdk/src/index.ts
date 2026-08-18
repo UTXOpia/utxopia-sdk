@@ -192,11 +192,7 @@ export {
 export {
   initPoseidon,
   isPoseidonReady,
-  poseidonHash,
   poseidonHashSync,
-  computeUnifiedCommitment,
-  computeNullifier,
-  hashNullifier,
   computeUnifiedCommitmentSync,
   computeNullifierSync,
   hashNullifierSync,
