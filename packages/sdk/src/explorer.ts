@@ -16,11 +16,16 @@ import type { RpcClient } from "./commitment-tree";
 /** NullifierRecord account size (1 byte — slim layout, just discriminator) */
 export const NULLIFIER_RECORD_SIZE = 1;
 
-/** RedemptionRequest account size (138 bytes):
- *  disc(1) status(1) btc_script_len(1) pad(1) processing_slot(4) request_id(8)
+/** RedemptionRequest account size (178 bytes):
+ *  disc(1) status(1) btc_script_len(1) signing_approved(1) processing_slot(4) request_id(8)
  *  requester(32) amount_sats(8) service_fee(8) total_input_sats(8) btc_script(34)
- *  token_id(32). */
-export const REDEMPTION_REQUEST_SIZE = 138;
+ *  token_id(32) reserved_count(1) approved_inputs(4) _padding2(3) inputs_commitment(32).
+ *
+ *  This is a `dataSize` filter, so a stale value silently returns nothing rather than failing:
+ *  it sat at 138 — the struct's length before reserved_count/approved_inputs/inputs_commitment
+ *  were added — and matched no account on chain. `RedemptionRequest::LEN` is pinned by a test
+ *  on the program side; update both together. Field offsets below are unaffected. */
+export const REDEMPTION_REQUEST_SIZE = 178;
 
 /** NullifierRecord discriminator byte */
 export const NULLIFIER_RECORD_DISCRIMINATOR = 0x03;
