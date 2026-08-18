@@ -58,8 +58,10 @@ const deposit = await createStealthDeposit(recipient, 100_000n);
 const notes = await scanAnnouncements(keys, announcements);
 ```
 
-`packages/sdk/README.md` covers each area in depth; `packages/sdk/docs/SDK.md` has the full type
-reference.
+`docs/API-MAP.md` lists every export grouped by what you are building — config, keys, PDAs,
+notes, stealth, Bitcoin, proving, instructions, chain reads, disclosure — and marks which ones
+the reference apps actually use. `packages/sdk/README.md` covers each area in depth;
+`packages/sdk/docs/SDK.md` has the full type reference.
 
 ## Entry points
 
