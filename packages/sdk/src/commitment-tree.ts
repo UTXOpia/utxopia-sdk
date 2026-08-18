@@ -642,7 +642,7 @@ export async function buildCommitmentTreeFromChain(
  * @param commitment - Commitment to find
  * @returns Leaf index or -1 if not found
  */
-export async function getLeafIndexForCommitment(
+export async function fetchLeafIndexForCommitment(
   rpc: RpcClient,
   programId: string,
   commitment: bigint

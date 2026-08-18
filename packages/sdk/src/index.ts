@@ -181,6 +181,11 @@ export {
 } from "./selective-disclosure";
 
 // ==========================================================================
+// Deliberately not re-exported: isWalletAdapter, isDirectVaultDepositMode (guards the SDK
+// branches on), updateNoteWithHashes, updateStealthNoteWithHashes (mutators for fields the
+// SDK computes) and stealthNoteHasComputedHashes (a predicate over state no caller builds).
+// Still exported from their own modules for internal use — they are just not public API.
+
 // Poseidon hash utilities
 // ==========================================================================
 
@@ -210,7 +215,7 @@ export {
 // ==========================================================================
 
 export {
-  getTokenConfig,
+  fetchTokenConfig,
   getTokenId,
   fetchSupportedTokens,
   fetchEnabledTokens,
@@ -236,13 +241,13 @@ export {
   MAGICBLOCK_VALIDATOR_IDENTITIES,
   buildDefaultPrivacyDomain,
   buildMagicBlockPerMemberFlags,
-  deriveMagicBlockCommitRecordPda,
-  deriveMagicBlockCommitStatePda,
-  deriveMagicBlockDelegateBufferPda,
-  deriveMagicBlockDelegationMetadataPda,
-  deriveMagicBlockDelegationRecordPda,
-  deriveMagicBlockPermissionPda,
-  deriveMagicBlockUndelegateBufferPda,
+  deriveMagicBlockCommitRecordPDA,
+  deriveMagicBlockCommitStatePDA,
+  deriveMagicBlockDelegateBufferPDA,
+  deriveMagicBlockDelegationMetadataPDA,
+  deriveMagicBlockDelegationRecordPDA,
+  deriveMagicBlockPermissionPDA,
+  deriveMagicBlockUndelegateBufferPDA,
   requiresMagicBlockEndpoint,
   getMagicBlockEndpoint,
   getMagicBlockValidatorIdentity,
@@ -266,7 +271,6 @@ export {
 export {
   generateNote,
   createNoteFromSecrets,
-  updateNoteWithHashes,
   serializeNote,
   deserializeNote,
   noteHasComputedHashes,
@@ -283,10 +287,8 @@ export {
   createNote,
   prepareWithdrawal,
   createStealthNote,
-  updateStealthNoteWithHashes,
   serializeStealthNote,
   deserializeStealthNote,
-  stealthNoteHasComputedHashes,
   type Note,
   type SerializedNote,
   type NoteData,
@@ -511,7 +513,6 @@ export {
 // ==========================================================================
 
 export {
-  isWalletAdapter,
   createStealthDeposit,
   createStealthDepositWithKeys,
   createStealthOutput,
@@ -549,7 +550,6 @@ export {
   type ViewOnlyKeys,
   type ViewOnlyScannedNote,
   createNonInteractiveDeposit,
-  isDirectVaultDepositMode,
   pickIkaCustodyKey,
   type NonInteractiveDepositResult,
   type NonInteractiveDepositWithRefundResult,
@@ -670,7 +670,7 @@ export {
   CommitmentTreeIndex,
   // On-chain fetch functions (Helius-compatible)
   buildCommitmentTreeFromChain,
-  getLeafIndexForCommitment,
+  fetchLeafIndexForCommitment,
   fetchMerkleProofForCommitment,
   getMerkleProofFromTree,
   type CommitmentTreeState,

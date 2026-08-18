@@ -8,7 +8,7 @@
 import { describe, test, expect, beforeAll } from "bun:test";
 import {
   buildCommitmentTreeFromChain,
-  getLeafIndexForCommitment,
+  fetchLeafIndexForCommitment,
   fetchMerkleProofForCommitment,
   getMerkleProofFromTree,
   CommitmentTreeIndex,

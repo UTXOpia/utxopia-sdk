@@ -77,6 +77,23 @@ import { … } from "@utxopia/sdk/btc-client";      // Esplora client, OP_RETURN
 The root export is the whole surface. The subpaths exist so a bundle that only needs, say,
 Esplora does not pull in the prover.
 
+## Naming
+
+The prefix tells you what a call costs, so you can read an import list without opening anything:
+
+| prefix | meaning |
+|---|---|
+| `derive*PDA` | pure address math, synchronous |
+| `fetch*` | hits the network — always async |
+| `get*` | reads local or already-fetched state — synchronous |
+| `parse*` | bytes in, typed object out; no IO |
+| `build*InstructionData` / `build*Instruction` | encode instruction data / assemble the full instruction |
+| `compute*Sync` | Poseidon and friends; the bare form is an async wrapper over the same thing |
+| `encode`/`decode`, `pack`/`unpack`, `serialize`/`deserialize` | symmetric pairs, always both directions |
+
+`PDA` is spelled in caps. Seven MagicBlock helpers used to say `Pda` and two RPC calls were named
+`get*`; they were renamed before the first publish, while doing so was still free.
+
 ## Proving
 
 Proof generation needs circuit artifacts — a `.wasm` witness generator and a `.zkey` — which are

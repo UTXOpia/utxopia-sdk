@@ -27,10 +27,10 @@ import {
   buildPolicyApprovalDecisionInstruction,
   buildPolicyApprovalCommitInstruction,
   buildDefaultPrivacyDomain,
-  deriveMagicBlockDelegateBufferPda,
-  deriveMagicBlockDelegationMetadataPda,
-  deriveMagicBlockDelegationRecordPda,
-  deriveMagicBlockPermissionPda,
+  deriveMagicBlockDelegateBufferPDA,
+  deriveMagicBlockDelegationMetadataPDA,
+  deriveMagicBlockDelegationRecordPDA,
+  deriveMagicBlockPermissionPDA,
   derivePolicyApprovalPDA,
   getMagicBlockValidatorIdentity,
   getMagicBlockEndpoint,
@@ -157,13 +157,13 @@ describe("MagicBlock execution domains", () => {
 
   test("derives MagicBlock delegate PDAs for a delegated UTXOpia account", async () => {
     const delegated = DEVNET_CONFIG.commitmentTreePda;
-    const [buffer] = await deriveMagicBlockDelegateBufferPda(
+    const [buffer] = await deriveMagicBlockDelegateBufferPDA(
       delegated,
       DEVNET_CONFIG.utxopiaProgramId
     );
-    const [record] = await deriveMagicBlockDelegationRecordPda(delegated);
-    const [metadata] = await deriveMagicBlockDelegationMetadataPda(delegated);
-    const [permission] = await deriveMagicBlockPermissionPda(delegated);
+    const [record] = await deriveMagicBlockDelegationRecordPDA(delegated);
+    const [metadata] = await deriveMagicBlockDelegationMetadataPDA(delegated);
+    const [permission] = await deriveMagicBlockPermissionPDA(delegated);
 
     expect(buffer.toString()).not.toBe(record.toString());
     expect(record.toString()).not.toBe(metadata.toString());
