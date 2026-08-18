@@ -108,6 +108,10 @@ export {
   makeDelegationRecord,
   fingerprintDelegatedKey,
   clearDelegatedViewKey,
+  // The delegation-safe alternative: unlike createDelegatedViewKey this omits nullifyingKey,
+  // which is what stops the holder from deriving every nullifier the account will ever publish.
+  // It was reachable only by deep import while the footgun sat in the barrel.
+  extractViewOnlyBundle,
   type DelegatedViewKey,
   type DelegationRecord,
 } from "./keys";

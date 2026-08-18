@@ -29,39 +29,14 @@
       "default": "./packages/sdk/src/prover/mobile.ts"
     },
     "./stealth": {
-      "types": "./packages/sdk/src/stealth/index.ts",
-      "import": "./packages/sdk/src/stealth/index.ts",
-      "default": "./packages/sdk/src/stealth/index.ts"
+      "types": "./packages/sdk/src/stealth.ts",
+      "import": "./packages/sdk/src/stealth.ts",
+      "default": "./packages/sdk/src/stealth.ts"
     },
     "./bitcoin": {
       "types": "./packages/sdk/src/bitcoin/index.ts",
       "import": "./packages/sdk/src/bitcoin/index.ts",
       "default": "./packages/sdk/src/bitcoin/index.ts"
-    },
-    "./solana": {
-      "types": "./packages/sdk/src/solana/index.ts",
-      "import": "./packages/sdk/src/solana/index.ts",
-      "default": "./packages/sdk/src/solana/index.ts"
-    },
-    "./watcher": {
-      "types": "./packages/sdk/src/watcher/index.ts",
-      "import": "./packages/sdk/src/watcher/index.ts",
-      "default": "./packages/sdk/src/watcher/index.ts"
-    },
-    "./watcher/web": {
-      "types": "./packages/sdk/src/watcher/web.ts",
-      "import": "./packages/sdk/src/watcher/web.ts",
-      "default": "./packages/sdk/src/watcher/web.ts"
-    },
-    "./watcher/native": {
-      "types": "./packages/sdk/src/watcher/native.ts",
-      "import": "./packages/sdk/src/watcher/native.ts",
-      "default": "./packages/sdk/src/watcher/native.ts"
-    },
-    "./react": {
-      "types": "./packages/sdk/src/react/index.ts",
-      "import": "./packages/sdk/src/react/index.ts",
-      "default": "./packages/sdk/src/react/index.ts"
     },
     "./btc-client": {
       "types": "./packages/btc-client/src/index.ts",
