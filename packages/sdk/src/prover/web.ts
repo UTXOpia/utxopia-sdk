@@ -138,6 +138,56 @@ const artifactDownloadCache = new Map<string, Promise<Uint8Array>>();
 
 type FastFileMem = { type: "mem"; data: Uint8Array };
 
+/**
+ * Expected SHA-256 of each artifact, keyed by its path under the circuit base — e.g.
+ * `joinsplit_1x1/joinsplit_1x1_js/joinsplit_1x1.wasm`. Empty until a caller supplies one.
+ */
+let artifactDigests: Record<string, string> | null = null;
+
+/**
+ * Pin the circuit artifacts this app is willing to prove with.
+ *
+ * Worth doing even though it costs a hash per download. The `.wasm` is the witness generator:
+ * it is handed the spending key, the nullifying key, note randomness, amounts and the full
+ * Merkle path in the clear. It arrives over plain `fetch`, where subresource integrity does not
+ * apply, and CDNs typically serve it `immutable, max-age=31536000` — so a substituted file keeps
+ * working out of browser and edge caches long after the origin is cleaned up. The proofs it
+ * produces still verify, so nothing fails and no user notices.
+ *
+ * Digests must come from the consuming build (they change whenever circuits are rebuilt), which
+ * is why the SDK cannot ship them. Once set, verification is enforced and fails closed: an
+ * artifact with no recorded digest is refused rather than trusted.
+ */
+export function setCircuitArtifactDigests(digests: Record<string, string> | null): void {
+  artifactDigests = digests;
+  // Anything admitted under the old policy must be re-checked under the new one.
+  artifactBytesCache.clear();
+}
+
+const toHex = (buf: ArrayBuffer) =>
+  Array.from(new Uint8Array(buf), (b) => b.toString(16).padStart(2, "0")).join("");
+
+async function verifyArtifactBytes(url: string, bytes: Uint8Array): Promise<void> {
+  if (!artifactDigests) return;
+  // Key by path-under-base so one manifest works across origins (local dev vs CDN).
+  const key = Object.keys(artifactDigests).find((k) => url.endsWith(k));
+  if (!key) {
+    throw new Error(
+      `No integrity digest recorded for circuit artifact ${url} — refusing to prove. ` +
+        `Regenerate the artifact manifest so it covers every shape this origin serves.`,
+    );
+  }
+  const actual = toHex(
+    await crypto.subtle.digest("SHA-256", bytes.buffer.slice(bytes.byteOffset, bytes.byteOffset + bytes.byteLength) as ArrayBuffer),
+  );
+  if (actual !== artifactDigests[key]) {
+    throw new Error(
+      `Circuit artifact ${key} failed its integrity check (expected ${artifactDigests[key]}, ` +
+        `got ${actual}). Refusing to prove against an artifact this build does not recognise.`,
+    );
+  }
+}
+
 async function fetchArtifactToMemory(url: string): Promise<FastFileMem> {
   const cached = artifactBytesCache.get(url);
   if (cached) return { type: "mem", data: cached };
@@ -150,6 +200,8 @@ async function fetchArtifactToMemory(url: string): Promise<FastFileMem> {
         throw new Error(`Failed to fetch circuit artifact ${url}: HTTP ${res.status}`);
       }
       const bytes = new Uint8Array(await res.arrayBuffer());
+      // Before the cache, so a rejected artifact is never reachable from it.
+      await verifyArtifactBytes(url, bytes);
       artifactBytesCache.set(url, bytes);
       return bytes;
     })();

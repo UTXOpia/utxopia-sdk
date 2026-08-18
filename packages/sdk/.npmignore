@@ -1,0 +1,6 @@
+# Overrides the sibling .gitignore, which excludes dist/ — correct for git, wrong for the
+# tarball, since dist/ is the published artifact. Kept minimal: package.json `files` decides.
+src/
+test/
+docs/
+tsconfig.json

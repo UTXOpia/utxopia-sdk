@@ -1,0 +1,3 @@
+# npm falls back to .gitignore when this file is absent, and .gitignore excludes dist/ —
+# which is exactly what has to ship. The `files` allowlist in package.json decides what is
+# published; this file only exists to stop .gitignore being used for that decision.
