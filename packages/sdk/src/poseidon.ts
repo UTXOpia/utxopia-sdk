@@ -61,12 +61,25 @@ export async function initPoseidon(): Promise<void> {
 }
 
 /**
- * Hash inputs using Circom-compatible Poseidon (async)
- * Returns bigint result
+ * Whether Poseidon can hash right now.
+ *
+ * Always true: poseidon-lite is pure synchronous JS with nothing to load, so `initPoseidon()`
+ * exists only so callers written against a WASM-backed hasher keep working. Kept honest rather
+ * than tracking a flag — the previous version lived in note.ts over its own state and reported
+ * false no matter what you called.
  */
-export async function poseidonHash(inputs: bigint[]): Promise<bigint> {
-  return poseidonHashSync(inputs);
+export function isPoseidonReady(): boolean {
+  return true;
 }
+
+/*
+ * The async forms of these hashes are gone: poseidonHash, computeUnifiedCommitment,
+ * computeNullifier, hashNullifier, computeMPK, computeNPK, computeJoinSplitCommitment and
+ * computeJoinSplitNullifier were each `return xSync(...)`. poseidon-lite is pure synchronous JS,
+ * so awaiting them promised work that never happened and pushed async up through every caller
+ * for nothing — which is why all eight were unused outside this file while the *Sync forms are
+ * called 130-odd times. Use the *Sync functions.
+ */
 
 /**
  * Synchronous Poseidon hash (no initialization required with poseidon-lite)
@@ -86,30 +99,6 @@ export const BN254_SCALAR_FIELD =
 // ============================================================================
 // Unified Model Functions (Primary API) - Async versions
 // ============================================================================
-
-/**
- * Compute unified commitment from public key x-coordinate and amount
- * commitment = Poseidon(pub_key_x, amount)
- */
-export async function computeUnifiedCommitment(pubKeyX: bigint, amount: bigint): Promise<bigint> {
-  return poseidonHash([pubKeyX, amount]);
-}
-
-/**
- * Compute nullifier from private key and leaf index
- * nullifier = Poseidon(priv_key, leaf_index)
- */
-export async function computeNullifier(privKey: bigint, leafIndex: bigint): Promise<bigint> {
-  return poseidonHash([privKey, leafIndex]);
-}
-
-/**
- * Hash nullifier for double-spend prevention
- * nullifier_hash = Poseidon(nullifier)
- */
-export async function hashNullifier(nullifier: bigint): Promise<bigint> {
-  return poseidonHash([nullifier]);
-}
 
 // ============================================================================
 // Synchronous versions (internal use only - require prior initPoseidon call)
@@ -132,45 +121,16 @@ export function hashNullifierSync(nullifier: bigint): bigint {
 // JoinSplit Primitives (Railgun-aligned 3-key model)
 // ============================================================================
 
-/**
- * Compute Master Public Key: MPK = Poseidon(pkX, pkY, nullifyingKey)
- */
-export async function computeMPK(pkX: bigint, pkY: bigint, nullifyingKey: bigint): Promise<bigint> {
-  return poseidonHash([pkX, pkY, nullifyingKey]);
-}
-
 export function computeMPKSync(pkX: bigint, pkY: bigint, nullifyingKey: bigint): bigint {
   return poseidonHashSync([pkX, pkY, nullifyingKey]);
-}
-
-/**
- * Compute Note Public Key: NPK = Poseidon(MPK, random)
- */
-export async function computeNPK(mpk: bigint, random: bigint): Promise<bigint> {
-  return poseidonHash([mpk, random]);
 }
 
 export function computeNPKSync(mpk: bigint, random: bigint): bigint {
   return poseidonHashSync([mpk, random]);
 }
 
-/**
- * Compute JoinSplit commitment: Poseidon(npk, token, amount)
- */
-export async function computeJoinSplitCommitment(npk: bigint, token: bigint, amount: bigint): Promise<bigint> {
-  return poseidonHash([npk, token, amount]);
-}
-
 export function computeJoinSplitCommitmentSync(npk: bigint, token: bigint, amount: bigint): bigint {
   return poseidonHashSync([npk, token, amount]);
-}
-
-/**
- * Compute JoinSplit nullifier: Poseidon(nullifyingKey, leafIndex)
- * (Same hash as computeNullifier but semantically distinct in the 3-key model)
- */
-export async function computeJoinSplitNullifier(nullifyingKey: bigint, leafIndex: bigint): Promise<bigint> {
-  return poseidonHash([nullifyingKey, leafIndex]);
 }
 
 export function computeJoinSplitNullifierSync(nullifyingKey: bigint, leafIndex: bigint): bigint {

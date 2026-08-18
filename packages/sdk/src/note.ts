@@ -459,7 +459,6 @@ export interface NoteData {
 }
 
 // Poseidon initialization state (for API compatibility)
-let poseidonInitialized = false;
 
 /**
  * Create a simple note (alias for generateNote but returns NoteData)
@@ -478,24 +477,10 @@ export function createNote(amount: bigint): NoteData {
   };
 }
 
-/**
- * Initialize Poseidon (no-op for circom - hashing is done in circuit)
- *
- * Kept for API compatibility. In circom mode, this is a no-op.
- */
-export async function initPoseidon(): Promise<void> {
-  poseidonInitialized = true;
-  // No actual initialization needed - circom circuit handles Poseidon
-}
-
-/**
- * Check if Poseidon is ready
- *
- * Always returns true after initPoseidon() is called (for API compatibility).
- */
-export function isPoseidonReady(): boolean {
-  return poseidonInitialized;
-}
+// initPoseidon/isPoseidonReady used to live here as well, over a flag local to this module. The
+// barrel exported initPoseidon from poseidon.ts and isPoseidonReady from here, so they read
+// different state: `await initPoseidon(); isPoseidonReady()` returned false forever. Both now
+// belong to poseidon.ts, which owns the actual hasher.
 
 /**
  * Prepare withdrawal - creates change note for remaining balance

@@ -108,7 +108,7 @@ function magicBlockAddressBytes(value: Address): Uint8Array {
   return new Uint8Array(getAddressEncoder().encode(value));
 }
 
-export async function deriveMagicBlockDelegationRecordPda(
+export async function deriveMagicBlockDelegationRecordPDA(
   delegatedAccount: Address
 ): Promise<[Address, number]> {
   const result = await getProgramDerivedAddress({
@@ -118,7 +118,7 @@ export async function deriveMagicBlockDelegationRecordPda(
   return [result[0], result[1]];
 }
 
-export async function deriveMagicBlockDelegationMetadataPda(
+export async function deriveMagicBlockDelegationMetadataPDA(
   delegatedAccount: Address
 ): Promise<[Address, number]> {
   const result = await getProgramDerivedAddress({
@@ -131,7 +131,7 @@ export async function deriveMagicBlockDelegationMetadataPda(
   return [result[0], result[1]];
 }
 
-export async function deriveMagicBlockDelegateBufferPda(
+export async function deriveMagicBlockDelegateBufferPDA(
   delegatedAccount: Address,
   ownerProgram: Address
 ): Promise<[Address, number]> {
@@ -142,7 +142,7 @@ export async function deriveMagicBlockDelegateBufferPda(
   return [result[0], result[1]];
 }
 
-export async function deriveMagicBlockUndelegateBufferPda(
+export async function deriveMagicBlockUndelegateBufferPDA(
   delegatedAccount: Address
 ): Promise<[Address, number]> {
   const result = await getProgramDerivedAddress({
@@ -152,7 +152,7 @@ export async function deriveMagicBlockUndelegateBufferPda(
   return [result[0], result[1]];
 }
 
-export async function deriveMagicBlockCommitStatePda(
+export async function deriveMagicBlockCommitStatePDA(
   delegatedAccount: Address
 ): Promise<[Address, number]> {
   const result = await getProgramDerivedAddress({
@@ -162,7 +162,7 @@ export async function deriveMagicBlockCommitStatePda(
   return [result[0], result[1]];
 }
 
-export async function deriveMagicBlockCommitRecordPda(
+export async function deriveMagicBlockCommitRecordPDA(
   delegatedAccount: Address
 ): Promise<[Address, number]> {
   const result = await getProgramDerivedAddress({
@@ -175,7 +175,7 @@ export async function deriveMagicBlockCommitRecordPda(
   return [result[0], result[1]];
 }
 
-export async function deriveMagicBlockPermissionPda(
+export async function deriveMagicBlockPermissionPDA(
   permissionedAccount: Address
 ): Promise<[Address, number]> {
   const result = await getProgramDerivedAddress({

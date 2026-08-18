@@ -2,66 +2,60 @@
   "name": "@utxopia/sdk",
   "version": "0.1.0-alpha.1",
   "description": "UTXOpia public SDK workspace",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/UTXOpia/utxopia-sdk.git"
+  },
+  "homepage": "https://github.com/UTXOpia/utxopia-sdk#readme",
+  "bugs": {
+    "url": "https://github.com/UTXOpia/utxopia-sdk/issues"
+  },
   "type": "module",
   "private": false,
-  "main": "./packages/sdk/src/index.ts",
-  "module": "./packages/sdk/src/index.ts",
-  "types": "./packages/sdk/src/index.ts",
+  "publishConfig": {
+    "access": "public"
+  },
+  "files": [
+    "packages/sdk/dist",
+    "packages/btc-client/src",
+    "README.md",
+    "LICENSE"
+  ],
+  "sideEffects": false,
+  "main": "./packages/sdk/dist/index.js",
+  "module": "./packages/sdk/dist/index.js",
+  "types": "./packages/sdk/dist/index.d.ts",
   "exports": {
     ".": {
-      "types": "./packages/sdk/src/index.ts",
-      "import": "./packages/sdk/src/index.ts",
-      "default": "./packages/sdk/src/index.ts"
+      "types": "./packages/sdk/dist/index.d.ts",
+      "import": "./packages/sdk/dist/index.js",
+      "default": "./packages/sdk/dist/index.js"
     },
     "./prover": {
-      "types": "./packages/sdk/src/prover/index.ts",
-      "import": "./packages/sdk/src/prover/index.ts",
-      "default": "./packages/sdk/src/prover/index.ts"
+      "types": "./packages/sdk/dist/prover/index.d.ts",
+      "import": "./packages/sdk/dist/prover/index.js",
+      "default": "./packages/sdk/dist/prover/index.js"
     },
     "./prover/web": {
-      "types": "./packages/sdk/src/prover/web.ts",
-      "import": "./packages/sdk/src/prover/web.ts",
-      "default": "./packages/sdk/src/prover/web.ts"
+      "types": "./packages/sdk/dist/prover/web.d.ts",
+      "import": "./packages/sdk/dist/prover/web.js",
+      "default": "./packages/sdk/dist/prover/web.js"
     },
     "./prover/mobile": {
-      "types": "./packages/sdk/src/prover/mobile.ts",
-      "import": "./packages/sdk/src/prover/mobile.ts",
-      "default": "./packages/sdk/src/prover/mobile.ts"
-    },
-    "./stealth": {
-      "types": "./packages/sdk/src/stealth/index.ts",
-      "import": "./packages/sdk/src/stealth/index.ts",
-      "default": "./packages/sdk/src/stealth/index.ts"
+      "types": "./packages/sdk/dist/prover/mobile.d.ts",
+      "import": "./packages/sdk/dist/prover/mobile.js",
+      "default": "./packages/sdk/dist/prover/mobile.js"
     },
     "./bitcoin": {
-      "types": "./packages/sdk/src/bitcoin/index.ts",
-      "import": "./packages/sdk/src/bitcoin/index.ts",
-      "default": "./packages/sdk/src/bitcoin/index.ts"
+      "types": "./packages/sdk/dist/bitcoin/index.d.ts",
+      "import": "./packages/sdk/dist/bitcoin/index.js",
+      "default": "./packages/sdk/dist/bitcoin/index.js"
     },
-    "./solana": {
-      "types": "./packages/sdk/src/solana/index.ts",
-      "import": "./packages/sdk/src/solana/index.ts",
-      "default": "./packages/sdk/src/solana/index.ts"
-    },
-    "./watcher": {
-      "types": "./packages/sdk/src/watcher/index.ts",
-      "import": "./packages/sdk/src/watcher/index.ts",
-      "default": "./packages/sdk/src/watcher/index.ts"
-    },
-    "./watcher/web": {
-      "types": "./packages/sdk/src/watcher/web.ts",
-      "import": "./packages/sdk/src/watcher/web.ts",
-      "default": "./packages/sdk/src/watcher/web.ts"
-    },
-    "./watcher/native": {
-      "types": "./packages/sdk/src/watcher/native.ts",
-      "import": "./packages/sdk/src/watcher/native.ts",
-      "default": "./packages/sdk/src/watcher/native.ts"
-    },
-    "./react": {
-      "types": "./packages/sdk/src/react/index.ts",
-      "import": "./packages/sdk/src/react/index.ts",
-      "default": "./packages/sdk/src/react/index.ts"
+    "./stealth": {
+      "types": "./packages/sdk/dist/stealth.d.ts",
+      "import": "./packages/sdk/dist/stealth.js",
+      "default": "./packages/sdk/dist/stealth.js"
     },
     "./btc-client": {
       "types": "./packages/btc-client/src/index.ts",

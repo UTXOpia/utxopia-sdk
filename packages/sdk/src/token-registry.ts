@@ -126,7 +126,7 @@ export function parseTokenConfig(data: Uint8Array, configAddress: Address): Toke
  * @param rpc - Solana RPC client (must have getAccountInfo)
  * @param mintAddress - SPL mint address (raw 32-byte pubkey)
  */
-export async function getTokenConfig(
+export async function fetchTokenConfig(
   rpc: { getAccountInfo(addr: Address, opts?: object): Promise<{ value: { data: Uint8Array } | null }> },
   mintAddress: Uint8Array,
 ): Promise<TokenConfigData | null> {

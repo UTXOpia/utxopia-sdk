@@ -108,6 +108,10 @@ export {
   makeDelegationRecord,
   fingerprintDelegatedKey,
   clearDelegatedViewKey,
+  // The delegation-safe alternative: unlike createDelegatedViewKey this omits nullifyingKey,
+  // which is what stops the holder from deriving every nullifier the account will ever publish.
+  // It was reachable only by deep import while the footgun sat in the barrel.
+  extractViewOnlyBundle,
   type DelegatedViewKey,
   type DelegationRecord,
 } from "./keys";
@@ -177,16 +181,18 @@ export {
 } from "./selective-disclosure";
 
 // ==========================================================================
+// Deliberately not re-exported: isWalletAdapter, isDirectVaultDepositMode (guards the SDK
+// branches on), updateNoteWithHashes, updateStealthNoteWithHashes (mutators for fields the
+// SDK computes) and stealthNoteHasComputedHashes (a predicate over state no caller builds).
+// Still exported from their own modules for internal use — they are just not public API.
+
 // Poseidon hash utilities
 // ==========================================================================
 
 export {
   initPoseidon,
-  poseidonHash,
+  isPoseidonReady,
   poseidonHashSync,
-  computeUnifiedCommitment,
-  computeNullifier,
-  hashNullifier,
   computeUnifiedCommitmentSync,
   computeNullifierSync,
   hashNullifierSync,
@@ -205,7 +211,7 @@ export {
 // ==========================================================================
 
 export {
-  getTokenConfig,
+  fetchTokenConfig,
   getTokenId,
   fetchSupportedTokens,
   fetchEnabledTokens,
@@ -231,18 +237,16 @@ export {
   MAGICBLOCK_VALIDATOR_IDENTITIES,
   buildDefaultPrivacyDomain,
   buildMagicBlockPerMemberFlags,
-  deriveMagicBlockCommitRecordPda,
-  deriveMagicBlockCommitStatePda,
-  deriveMagicBlockDelegateBufferPda,
-  deriveMagicBlockDelegationMetadataPda,
-  deriveMagicBlockDelegationRecordPda,
-  deriveMagicBlockPermissionPda,
-  deriveMagicBlockUndelegateBufferPda,
+  deriveMagicBlockCommitRecordPDA,
+  deriveMagicBlockCommitStatePDA,
+  deriveMagicBlockDelegateBufferPDA,
+  deriveMagicBlockDelegationMetadataPDA,
+  deriveMagicBlockDelegationRecordPDA,
+  deriveMagicBlockPermissionPDA,
+  deriveMagicBlockUndelegateBufferPDA,
   requiresMagicBlockEndpoint,
   getMagicBlockEndpoint,
   getMagicBlockValidatorIdentity,
-  assertMagicBlockRouteReady,
-  assertDomainExecutionPolicy,
   createMagicBlockRouterConnection,
   type BuildPrivacyDomainOptions,
   type MagicBlockEndpointConfig,
@@ -261,7 +265,6 @@ export {
 export {
   generateNote,
   createNoteFromSecrets,
-  updateNoteWithHashes,
   serializeNote,
   deserializeNote,
   noteHasComputedHashes,
@@ -276,13 +279,10 @@ export {
   deriveNoteFromMaster,
   estimateSeedStrength,
   createNote,
-  isPoseidonReady,
   prepareWithdrawal,
   createStealthNote,
-  updateStealthNoteWithHashes,
   serializeStealthNote,
   deserializeStealthNote,
-  stealthNoteHasComputedHashes,
   type Note,
   type SerializedNote,
   type NoteData,
@@ -507,7 +507,6 @@ export {
 // ==========================================================================
 
 export {
-  isWalletAdapter,
   createStealthDeposit,
   createStealthDepositWithKeys,
   createStealthOutput,
@@ -545,7 +544,6 @@ export {
   type ViewOnlyKeys,
   type ViewOnlyScannedNote,
   createNonInteractiveDeposit,
-  isDirectVaultDepositMode,
   pickIkaCustodyKey,
   type NonInteractiveDepositResult,
   type NonInteractiveDepositWithRefundResult,
@@ -666,7 +664,7 @@ export {
   CommitmentTreeIndex,
   // On-chain fetch functions (Helius-compatible)
   buildCommitmentTreeFromChain,
-  getLeafIndexForCommitment,
+  fetchLeafIndexForCommitment,
   fetchMerkleProofForCommitment,
   getMerkleProofFromTree,
   type CommitmentTreeState,
@@ -755,7 +753,6 @@ export {
   POOL_CONFIG_LEN,
   POOL_SCRIPT_MAX_LEN,
   // Redemption PDA helper
-  deriveRedemptionRequestPDA as deriveRedemptionRequestPDAFromInstruction,
   type Instruction,
   type ApproveRedemptionSigningInstructionOptions,
   type TransactInstructionOptions,
@@ -792,12 +789,10 @@ export {
 // ChadBuffer Relay
 // ==========================================================================
 
-export {
-  createChadBuffer as relayCreateChadBuffer,
-  uploadProofToBuffer as relayUploadProofToBuffer,
-  closeChadBuffer as relayCloseChadBuffer,
-  type RelayResult,
-} from "./relay";
+// relay.ts held a second implementation of the ChadBuffer lifecycle — create / upload / close —
+// alongside chadbuffer.ts, which already does all three. Nothing imported it but this barrel, and
+// the two disagreed on chunk size (1020 vs 1056 bytes for the same write instruction), so one of
+// them was wrong. Removed; chadbuffer.ts is the single implementation.
 
 // ==========================================================================
 // Explorer (on-chain account fetchers & parsers)

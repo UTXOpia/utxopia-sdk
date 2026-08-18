@@ -212,7 +212,9 @@ export function lightClientSeeds(): Uint8Array[] {
 
 /** `["block", block_hash]`. */
 export function blockHeaderSeeds(blockHash: Uint8Array): Uint8Array[] {
-  return [enc(PDA_SEEDS.BLOCK_HEADER), blockHash];
+  // A short hash still derives *an* address, just not the block's — the caller would then read
+  // or write the wrong account with no error anywhere. Every other 32-byte seed here is checked.
+  return [enc(PDA_SEEDS.BLOCK_HEADER), seedBytes(blockHash, "blockHash")];
 }
 
 /** `["height_index", height_le(8)]`. */
