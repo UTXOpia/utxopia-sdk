@@ -1841,32 +1841,11 @@ export function buildPolicyApprovalCommitInstruction(options: {
 // Redemption Request PDA Derivation
 // =============================================================================
 
-/**
- * Derive RedemptionRequest PDA
- *
- * Seeds: ["redemption", pool_state, user_pubkey, nonce_le_bytes]
- */
-export function deriveRedemptionRequestPDA(
-  poolState: Address,
-  userAddress: Address,
-  nonce: bigint,
-  programAddress?: Address,
-): { address: Uint8Array; seeds: Uint8Array[] } {
-  const userBytes = addressToBytes(userAddress);
-  const nonceBytes = new Uint8Array(8);
-  const view = new DataView(nonceBytes.buffer);
-  view.setBigUint64(0, nonce, true);
+// deriveRedemptionRequestPDA lived here too, over inlined copies of the same seeds pda.ts
+// already builds — and it returned `address: userBytes`, the caller's own pubkey rather than the
+// derived address, leaving a comment telling you to derive it yourself. Nothing used it. Use
+// `deriveRedemptionRequestPDA` from pda.ts, which returns the real PDA.
 
-  return {
-    address: userBytes, // Caller should use getProgramDerivedAddress
-    seeds: [
-      new TextEncoder().encode("redemption"),
-      addressToBytes(poolState),
-      userBytes,
-      nonceBytes,
-    ],
-  };
-}
 
 // =============================================================================
 // BTC Light Client Verify Transaction (disc=2)

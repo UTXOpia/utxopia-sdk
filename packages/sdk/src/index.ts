@@ -186,6 +186,7 @@ export {
 
 export {
   initPoseidon,
+  isPoseidonReady,
   poseidonHash,
   poseidonHashSync,
   computeUnifiedCommitment,
@@ -280,7 +281,6 @@ export {
   deriveNoteFromMaster,
   estimateSeedStrength,
   createNote,
-  isPoseidonReady,
   prepareWithdrawal,
   createStealthNote,
   updateStealthNoteWithHashes,
@@ -759,7 +759,6 @@ export {
   POOL_CONFIG_LEN,
   POOL_SCRIPT_MAX_LEN,
   // Redemption PDA helper
-  deriveRedemptionRequestPDA as deriveRedemptionRequestPDAFromInstruction,
   type Instruction,
   type ApproveRedemptionSigningInstructionOptions,
   type TransactInstructionOptions,
@@ -796,12 +795,10 @@ export {
 // ChadBuffer Relay
 // ==========================================================================
 
-export {
-  createChadBuffer as relayCreateChadBuffer,
-  uploadProofToBuffer as relayUploadProofToBuffer,
-  closeChadBuffer as relayCloseChadBuffer,
-  type RelayResult,
-} from "./relay";
+// relay.ts held a second implementation of the ChadBuffer lifecycle — create / upload / close —
+// alongside chadbuffer.ts, which already does all three. Nothing imported it but this barrel, and
+// the two disagreed on chunk size (1020 vs 1056 bytes for the same write instruction), so one of
+// them was wrong. Removed; chadbuffer.ts is the single implementation.
 
 // ==========================================================================
 // Explorer (on-chain account fetchers & parsers)

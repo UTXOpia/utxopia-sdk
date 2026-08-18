@@ -61,6 +61,18 @@ export async function initPoseidon(): Promise<void> {
 }
 
 /**
+ * Whether Poseidon can hash right now.
+ *
+ * Always true: poseidon-lite is pure synchronous JS with nothing to load, so `initPoseidon()`
+ * exists only so callers written against a WASM-backed hasher keep working. Kept honest rather
+ * than tracking a flag — the previous version lived in note.ts over its own state and reported
+ * false no matter what you called.
+ */
+export function isPoseidonReady(): boolean {
+  return true;
+}
+
+/**
  * Hash inputs using Circom-compatible Poseidon (async)
  * Returns bigint result
  */
