@@ -4,8 +4,15 @@ TypeScript client for [UTXOpia](https://utxopia.com) — a privacy-preserving Bi
 bridge. Deposits arrive as commitments in a Merkle tree, transfers move between commitments with
 Groth16 JoinSplit proofs, and an amount only becomes public when someone withdraws.
 
-> **Alpha.** `0.1.0-alpha.1`, not on npm, no stability guarantees. Interfaces move without notice
-> and the protocol has not been deployed to mainnet. Do not point this at funds you cannot lose.
+> **Alpha.** `0.1.0-alpha.1`. The protocol has not been deployed to mainnet — do not point this at
+> funds you cannot lose.
+>
+> **The export surface is not a contract yet.** Roughly 430 things are exported; about a third are
+> exercised by the reference apps, and the rest is protocol surface nobody has needed yet or
+> helpers that were never deliberately made public. Being pre-1.0 is what makes that survivable:
+> the surface will be narrowed to the workflows below before 1.0, and anything outside them may
+> disappear in a minor release. Build against what `docs/API-MAP.md` marks as used; if you need
+> something else, open an issue so it gets kept on purpose rather than by accident.
 
 ## Install
 

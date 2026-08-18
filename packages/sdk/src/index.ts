@@ -247,8 +247,6 @@ export {
   requiresMagicBlockEndpoint,
   getMagicBlockEndpoint,
   getMagicBlockValidatorIdentity,
-  assertMagicBlockRouteReady,
-  assertDomainExecutionPolicy,
   createMagicBlockRouterConnection,
   type BuildPrivacyDomainOptions,
   type MagicBlockEndpointConfig,

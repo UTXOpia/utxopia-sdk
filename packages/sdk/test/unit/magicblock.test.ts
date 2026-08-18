@@ -14,8 +14,6 @@ import {
   buildMagicBlockCommitInstruction,
   buildMagicBlockDelegateInstruction,
   buildMagicBlockPerPermissionInstruction,
-  assertDomainExecutionPolicy,
-  assertMagicBlockRouteReady,
   createMagicBlockRouterConnection,
   buildMagicBlockCommitInstructionData,
   buildMagicBlockDelegateInstructionData,
@@ -36,6 +34,8 @@ import {
   getMagicBlockEndpoint,
   requiresMagicBlockEndpoint,
 } from "../../src";
+// Internal invariant guards — deliberately not part of the public barrel.
+import { assertDomainExecutionPolicy, assertMagicBlockRouteReady } from "../../src/magicblock";
 
 describe("MagicBlock execution domains", () => {
   test("builds a conservative public Solana domain by default", () => {
