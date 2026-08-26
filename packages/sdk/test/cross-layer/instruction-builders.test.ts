@@ -52,7 +52,7 @@ const STEALTH_DATA_PER_OUTPUT = 72; // ephemeral_pub(32) + encrypted_amount(8) +
 const DISC_TRANSACT = 13;
 const DISC_UNSHIELD = 14;
 const DISC_REDEEM = 15;
-const DISC_RESERVED_REQUEST_REDEMPTION = 16;
+const DISC_FREEZE_VK_REGISTRY = 16;
 const DISC_COMPLETE_REDEMPTION = 17;
 const DISC_CANCEL_REDEMPTION = 19;
 const DISC_ROTATE_AUDITOR = 35;
@@ -655,6 +655,7 @@ describe("Cross-layer: buildUnshieldInstructionData (disc=14)", () => {
           vkRegistry: fakeAddress("vk"),
           user: fakeAddress("user"),
           tokenConfig: fakeAddress("tc"),
+          heightIndex: fakeAddress("hi"),
           vault: fakeAddress("vault"),
           recipientTokenAccounts: [fakeAddress("uta")],
           nullifierRecords: [fakeAddress("nr0"), fakeAddress("nr1")],
@@ -679,6 +680,7 @@ describe("Cross-layer: buildUnshieldInstructionData (disc=14)", () => {
           vkRegistry: fakeAddress("vk"),
           user: fakeAddress("user"),
           tokenConfig: fakeAddress("tc"),
+          heightIndex: fakeAddress("hi"),
           vault: fakeAddress("vault"),
           recipientTokenAccounts: [fakeAddress("uta")],
           nullifierRecords: [fakeAddress("nr0")],
@@ -712,6 +714,7 @@ describe("Cross-layer: buildUnshieldInstructionData (disc=14)", () => {
           vkRegistry: fakeAddress("vk"),
           user: fakeAddress("user"),
           tokenConfig: fakeAddress("tc"),
+          heightIndex: fakeAddress("hi"),
           vault: fakeAddress("vault"),
           recipientTokenAccounts: [fakeAddress("uta")],
           nullifierRecords: [fakeAddress("nr0")],
@@ -1072,12 +1075,13 @@ describe("Cross-layer: buildCompleteRedemptionInstructionData (disc=17)", () => 
           poolConfig: fakeAddress("pc"),
           changeUtxo: fakeAddress("change"),
           tokenConfig: fakeAddress("tc"),
+          heightIndex: fakeAddress("hi"),
         },
       });
-      expect(ix.accounts.length).toBe(15);
+      expect(ix.accounts.length).toBe(16);
     });
 
-    it("with change and 3 consumed UTXOs: 15 + 3 = 18 accounts", () => {
+    it("with change and 3 consumed UTXOs: 16 + 3 = 19 accounts", () => {
       const ix = buildCompleteRedemptionInstruction({
         btcTxid: filledBytes(32, 0xaa),
         txSize: 225,
@@ -1097,10 +1101,11 @@ describe("Cross-layer: buildCompleteRedemptionInstructionData (disc=17)", () => 
           poolConfig: fakeAddress("pc"),
           changeUtxo: fakeAddress("change"),
           tokenConfig: fakeAddress("tc"),
+          heightIndex: fakeAddress("hi"),
           consumedUtxos: [fakeAddress("u0"), fakeAddress("u1"), fakeAddress("u2")],
         },
       });
-      expect(ix.accounts.length).toBe(18);
+      expect(ix.accounts.length).toBe(19);
     });
 
     it("account order matches Rust without change: fixed accounts, then token config", () => {
@@ -1122,6 +1127,7 @@ describe("Cross-layer: buildCompleteRedemptionInstructionData (disc=17)", () => 
           completionReceipt: fakeAddress("cr"),
           poolConfig: fakeAddress("pc"),
           tokenConfig: fakeAddress("tc"),
+          heightIndex: fakeAddress("hi"),
         },
       });
       expect(ix.accounts[0].role).toBe(AccountRole.WRITABLE);           // pool_state
@@ -1161,6 +1167,7 @@ describe("Cross-layer: buildCompleteRedemptionInstructionData (disc=17)", () => 
           poolConfig: fakeAddress("pc"),
           changeUtxo: fakeAddress("change"),
           tokenConfig: fakeAddress("tc"),
+          heightIndex: fakeAddress("hi"),
           consumedUtxos: [fakeAddress("u0"), fakeAddress("u1")],
         },
       });
@@ -1203,11 +1210,12 @@ describe("Cross-layer: buildCompleteRedemptionInstructionData (disc=17)", () => 
           completionReceipt: fakeAddress("cr"),
           poolConfig: fakeAddress("pc"),
           tokenConfig: fakeAddress("tc"),
+          heightIndex: fakeAddress("hi"),
           // consumedUtxos intentionally omitted
         },
       });
-      // Fixed accounts plus the trailing token config; no change placeholder.
-      expect(ix.accounts.length).toBe(14);
+      // Fixed accounts plus the trailing token config and height index; no change placeholder.
+      expect(ix.accounts.length).toBe(15);
     });
 
     it("requires a change UTXO when pool_script is present", () => {
@@ -1229,6 +1237,7 @@ describe("Cross-layer: buildCompleteRedemptionInstructionData (disc=17)", () => 
           completionReceipt: fakeAddress("cr"),
           poolConfig: fakeAddress("pc"),
           tokenConfig: fakeAddress("tc"),
+          heightIndex: fakeAddress("hi"),
         },
       })).toThrow("changeUtxo is required when poolScript is non-empty");
     });
@@ -1291,6 +1300,7 @@ describe("Cross-layer: buildCancelRedemptionInstructionData (disc=19)", () => {
           redemptionRequest: fakeAddress("rr"),
           commitmentTree: fakeAddress("tree"),
           tokenConfig: fakeAddress("tc"),
+          heightIndex: fakeAddress("hi"),
         },
       });
       expect(ix.accounts.length).toBe(6);
@@ -1312,6 +1322,7 @@ describe("Cross-layer: buildCancelRedemptionInstructionData (disc=19)", () => {
           redemptionRequest: fakeAddress("rr"),
           commitmentTree: fakeAddress("tree"),
           tokenConfig: fakeAddress("tc"),
+          heightIndex: fakeAddress("hi"),
           reservedUtxos: [fakeAddress("u0"), fakeAddress("u1")],
         },
       });
@@ -1342,7 +1353,7 @@ describe("Cross-layer: instruction discriminator uniqueness", () => {
     const { INSTRUCTION_DISCRIMINATORS } = require("../../src/instructions");
     expect(INSTRUCTION_DISCRIMINATORS.TRANSACT).toBe(DISC_TRANSACT);
     expect(INSTRUCTION_DISCRIMINATORS.UNSHIELD).toBe(DISC_UNSHIELD);
-    expect(INSTRUCTION_DISCRIMINATORS.RESERVED_REQUEST_REDEMPTION).toBe(DISC_RESERVED_REQUEST_REDEMPTION);
+    expect(INSTRUCTION_DISCRIMINATORS.FREEZE_VK_REGISTRY).toBe(DISC_FREEZE_VK_REGISTRY);
     expect(INSTRUCTION_DISCRIMINATORS.COMPLETE_REDEMPTION).toBe(DISC_COMPLETE_REDEMPTION);
   });
 });

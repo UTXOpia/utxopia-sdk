@@ -67,8 +67,9 @@ const INSTRUCTION = {
   TRANSACT: 13,
   UNSHIELD: 14,
   REDEEM: 15,
-  // Redemption lifecycle (16-19)
-  RESERVED_REQUEST_REDEMPTION: 16,
+  // VK registry freeze (16) — NOT part of the redemption range below
+  FREEZE_VK_REGISTRY: 16,
+  // Redemption lifecycle (17-19)
   COMPLETE_REDEMPTION: 17,
   MARK_PROCESSING: 18,
   CANCEL_REDEMPTION: 19,
@@ -275,6 +276,17 @@ export interface CompleteRedemptionInstructionOptions {
     poolVault: Address;
     completionReceipt: Address;
     poolConfig: Address;
+    /** HeightIndex PDA for the VerifiedTransaction's block —
+     *  `deriveHeightIndexPDA(blockHeight, config.btcLightClientProgramId)`.
+     *
+     *  REQUIRED. The program re-checks that the proof's block is still the canonical one at
+     *  that height before it settles (audit_1 F-BTC-04): a VerifiedTransaction records a merkle
+     *  proof that was valid once and is never invalidated, and the confirmation count is taken
+     *  against a tip that only grows, so neither notices a reorg. Omitting this fails with
+     *  InvalidSpvProof — the program locates the account by address, so its position in the
+     *  list does not matter, but its absence is an error rather than a skipped check.
+     */
+    heightIndex: Address;
     /** Change UTXO PDA. Required when poolScript is non-empty. */
     changeUtxo?: Address;
     /** zkBTC TokenConfig PDA (credits protocol revenue) */
@@ -298,6 +310,17 @@ export interface ApproveRedemptionSigningInstructionOptions {
     redemptionRequest: Address;
     authority: Address;
     poolConfig: Address;
+    /** HeightIndex PDA for the VerifiedTransaction's block —
+     *  `deriveHeightIndexPDA(blockHeight, config.btcLightClientProgramId)`.
+     *
+     *  REQUIRED. The program re-checks that the proof's block is still the canonical one at
+     *  that height before it settles (audit_1 F-BTC-04): a VerifiedTransaction records a merkle
+     *  proof that was valid once and is never invalidated, and the confirmation count is taken
+     *  against a tip that only grows, so neither notices a reorg. Omitting this fails with
+     *  InvalidSpvProof — the program locates the account by address, so its position in the
+     *  list does not matter, but its absence is an error rather than a skipped check.
+     */
+    heightIndex: Address;
     ikaProgram: Address;
     ikaCoordinator: Address;
     ikaMessageApproval: Address;
@@ -459,6 +482,9 @@ export function buildCompleteRedemptionInstruction(
   }
 
   accounts.push({ address: options.accounts.tokenConfig, role: AccountRole.WRITABLE });
+  // Located by address, so the trailing position is free — this instruction already has a
+  // variable tail (change UTXO, consumed UTXOs) and the program scans rather than indexing.
+  accounts.push({ address: options.accounts.heightIndex, role: AccountRole.READONLY });
 
   return {
     programAddress: config.utxopiaProgramId,
@@ -2235,6 +2261,17 @@ export interface CompleteDepositPermissionedOptions {
     tokenConfig: Address;
     /** 14. pool_config PDA (readonly) */
     poolConfig: Address;
+    /** HeightIndex PDA for the VerifiedTransaction's block —
+     *  `deriveHeightIndexPDA(blockHeight, config.btcLightClientProgramId)`.
+     *
+     *  REQUIRED. The program re-checks that the proof's block is still the canonical one at
+     *  that height before it settles (audit_1 F-BTC-04): a VerifiedTransaction records a merkle
+     *  proof that was valid once and is never invalidated, and the confirmation count is taken
+     *  against a tip that only grows, so neither notices a reorg. Omitting this fails with
+     *  InvalidSpvProof — the program locates the account by address, so its position in the
+     *  list does not matter, but its absence is an error rather than a skipped check.
+     */
+    heightIndex: Address;
     /** 15. one-time PolicyApproval (writable) */
     policyApproval: Address;
   };
@@ -2299,6 +2336,8 @@ export function buildCompleteDepositPermissionedInstructionData(options: {
  * 13. token_config        (writable)
  * 14. pool_config         (readonly)
  * 15. policy_approval     (writable)
+ * 16. policy_program      (readonly)
+ * 17. height_index        (readonly) — canonicality re-check, located by address
  */
 export function buildCompleteDepositPermissionedInstruction(
   options: CompleteDepositPermissionedOptions,
@@ -2333,6 +2372,7 @@ export function buildCompleteDepositPermissionedInstruction(
       { address: options.accounts.poolConfig,          role: AccountRole.READONLY },
       { address: options.accounts.policyApproval,      role: AccountRole.WRITABLE },
       { address: config.policyProgramId ?? config.utxopiaProgramId, role: AccountRole.READONLY },
+      { address: options.accounts.heightIndex,         role: AccountRole.READONLY },
     ],
     data,
   };

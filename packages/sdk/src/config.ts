@@ -203,23 +203,39 @@ export const LOCALNET_CHADBUFFER_PROGRAM_ID: Address = address(
 // =============================================================================
 
 /**
- * Fresh multi-pool devnet deployment (2026-07-26).
- * The default domain is public; institution pools are selected explicitly.
+ * Greenfield devnet + Bitcoin testnet4 deployment (2026-08-26).
+ *
+ * The previous deployment's programs were closed on chain, so this is not a redeploy and none
+ * of the old addresses resolve any more — anything still pinned to CvfSyACR… is talking to a
+ * program that no longer exists.
+ *
+ * Two pools were deployed, each with its own Ika DKG and therefore its own dWallet. The default
+ * below is the OPEN pool. Select the verified pool by overriding `zkbtcMint` and
+ * `ikaDwalletXOnlyPubkey` — `getConfig` re-derives poolStatePda, commitmentTreePda and poolVault
+ * from the mint, so those two values are all a caller needs:
+ *
+ *   verified  mint  3chHiDqMXKSoqLohVdLdB1XQFef732DJoa45BsyB3KFF
+ *             state 7wDtDd1uiJaVMSKh3XtteP6guqBLdkLDTAGh7E55WvZA
+ *             xonly f450661b93b9081167f5bb885b33d9c469a905f37999a8cddbbe727cd6aaf497
  */
 export const DEVNET_CONFIG: NetworkConfig = {
   network: "devnet",
 
-  utxopiaProgramId: address("CvfSyACR8xemPdeJsB3D8Xh15rKUQ3b5c1PvnmABCBJp"),
+  utxopiaProgramId: address("28z2AtKA6aFGrGCh4ns1rmp7vGpWuh6x3H7gXKBcfxur"),
   policyProgramId: address("9asWYKVriWGpExW5xM44ChHjZtispkLCiWKkM8SQi8Rs"),
-  btcLightClientProgramId: address("859B7kw1xDyY8rzSXY6pAPNxaAsPWrsaAPJk3iivd43g"),
+  // testnet4 light client, deployed 2026-08-26. Must match the `devnet` arm of
+  // BTC_LIGHT_CLIENT_PROGRAM_ID in programs/utxopia/src/constants.rs.
+  btcLightClientProgramId: address("4LZbktiNsiVAe2bwPCTPNgqiWWgZNUj4T3bDx8GZmehv"),
   chadbufferProgramId: CHADBUFFER_PROGRAM_ID,
   token2022ProgramId: TOKEN_2022_PROGRAM_ID,
   ataProgramId: ATA_PROGRAM_ID,
 
-  poolStatePda: address("9xeWc39r3Z176MUpMpaqCGJGneHMj4pfMRv9u6dp2Qgd"),
-  commitmentTreePda: address("4FvM9dCzDvr39Xu5xRUQc6EEm3UjSikyWUY5Hzpc5C4A"),
-  zkbtcMint: address("GuruxfN5irYcCyDiKFMeDRTNbP2WeHF1oWjQ8q8Esc16"),
-  poolVault: address("3GffHxesFsGj4QmgQ8ozs17dZFNTv4AAhdwyR2XZPzkm"),
+  // Open pool. Derived and then confirmed on chain: pool_state and commitment_tree are owned by
+  // the program (332 / 8816 bytes), the vault by Token-2022 (170 bytes).
+  poolStatePda: address("FezM7ksBwftqrd4TtabMa9uXt51eCT5M946YnpSEQZHm"),
+  commitmentTreePda: address("CHwJZqNAUag6ARDfmntvmbS4WeAsGX67f2vALxXbB6PP"),
+  zkbtcMint: address("87zWstDnNgMig2vk8q8jTrK6YTcyugeRTanfT3LfyU3T"),
+  poolVault: address("8VMfH4mDizU6nHybQumxeauyiEL2QTqrGQLXmAr9wpC3"),
 
   // RPC Endpoints
   solanaRpcUrl: "https://api.devnet.solana.com",
@@ -232,8 +248,11 @@ export const DEVNET_CONFIG: NetworkConfig = {
   // Circuit CDN (Groth16 artifacts: .wasm, .zkey files)
   circuitCdnUrl: "https://circuit.utxopia.com/circuits/v2/groth16",
 
-  // Groth16 Verifier: verification is inline in the UTXOpia program (no separate verifier program)
-  groth16VerifierProgramId: address("AjbX243s2JMFG2uhfTjKkadjPvQEPgcuyV3vfLJv36MT"), // inline in utxopia program
+  // Groth16 verification is inline in the UTXOpia program, so this is the same address.
+  // It used to hold a stale third id, which `getConfig` silently overwrote with the program id
+  // whenever a programId override was supplied — meaning the constant was only ever read on the
+  // no-override path, where it was wrong.
+  groth16VerifierProgramId: address("28z2AtKA6aFGrGCh4ns1rmp7vGpWuh6x3H7gXKBcfxur"),
 
   // VK Hashes (SHA256 of serialized VK bytes, generated from circom trusted setup)
   vkHashes: {
@@ -256,9 +275,13 @@ export const DEVNET_CONFIG: NetworkConfig = {
     "4x1": "0362b306b17dae916d836d9448a26c97e51b1b0a1a0ed052ebfbd4800e5000cf",
   },
 
-  // Ika dWallet x-only pubkey — populated by ./scripts/sync-env.sh from devnet-state.json.
+  // Ika dWallet x-only pubkey for the OPEN pool, read from its PoolConfig PDA
+  // (GQ5ZfD4tJmgcquHLAHSbmAm72Foi9hf3VduPrroysM1b, offset 68..100) on 2026-08-26.
+  // All-zero here used to mean "deposit addresses cannot be derived until sync-env.sh runs";
+  // the two pools have distinct dWallets, so a single synced value could only ever be right
+  // for one of them. See the verified pool's key in the header comment above.
   ikaDwalletXOnlyPubkey:
-    "0000000000000000000000000000000000000000000000000000000000000000",
+    "3a6ab80ba14bc050f048ee3e0b77d8935adf4fc5e2f5947311f26cc2cb5bd194",
 
   // SNS Subdomain Resolution (devnet)
   snsNameServiceProgramId: "namesLPneVptA9Z5rqUDD9tMTWEJwofgaYwp8cawRkX",  // SPL Name Service (devnet)
