@@ -431,6 +431,7 @@ export {
   createConfig,
   initConfig,
   DEVNET_CONFIG,
+  DEVNET_REGTEST_CONFIG,
   MAINNET_CONFIG,
   LOCALNET_CONFIG,
   TOKEN_PROGRAM_ID,

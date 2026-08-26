@@ -36,7 +36,8 @@ export function address(input: string): Address {
 export type NetworkType = "devnet" | "mainnet" | "localnet";
 export type AppNetworkId =
   | NetworkType
-  | "devnet-regtest";
+  | "devnet-regtest"
+  | "devnet-testnet4";
 
 export interface NetworkConfig {
   /** Network identifier */
@@ -294,6 +295,38 @@ export const DEVNET_CONFIG: NetworkConfig = {
 };
 
 /**
+ * Solana devnet + Bitcoin **regtest** deployment — the environment app.utxopia.com serves.
+ *
+ * This is a different deployment from DEVNET_CONFIG above, not a Bitcoin-side variation of it:
+ * a different program (CvfSyACR…), a different pool, a different Ika dWallet. It used to share
+ * DEVNET_CONFIG and differ only by bitcoinNetwork, which worked while one program hosted both.
+ * It no longer does — after 2026-08-26 there are two programs — so `devnet-regtest` resolving
+ * to DEVNET_CONFIG would silently point this environment at testnet4's program and pool.
+ *
+ * Pool addresses derived from the mint with the same seeds getConfig uses, then confirmed on
+ * devnet: pool_state and commitment_tree owned by CvfSyACR… at 332 and 8816 bytes, the vault by
+ * Token-2022 at 170.
+ */
+export const DEVNET_REGTEST_CONFIG: NetworkConfig = {
+  ...DEVNET_CONFIG,
+
+  utxopiaProgramId: address("CvfSyACR8xemPdeJsB3D8Xh15rKUQ3b5c1PvnmABCBJp"),
+  groth16VerifierProgramId: address("CvfSyACR8xemPdeJsB3D8Xh15rKUQ3b5c1PvnmABCBJp"),
+  btcLightClientProgramId: address("8hCSNKf8ByqZdet2D4SDiZHDrB1u9ohkhqKKzr9i7vfQ"),
+
+  poolStatePda: address("CeEEmE9MvFPZtqcgv1rsXmzNmfvchbs8VEZJGFKZ2Cyj"),
+  commitmentTreePda: address("45bCw97GssorJM9b1ZWZLMGy1NJUczcaNVaKASmCRohL"),
+  zkbtcMint: address("BJ5SXA33qK8r8BxJD4nQPf72ae9bactiA2Zqo33EcvPu"),
+  poolVault: address("JsZ1ipHZWiZYE8kRDXmEkKuiK6KKVxCVJKv1tGnCkM6"),
+
+  ikaDwalletXOnlyPubkey:
+    "243a6c47504f82d168754da9392a9dbcbab9b9f9c515a609227fac4642b2a26f",
+
+  bitcoinNetwork: "regtest",
+  esploraUrl: "http://localhost:2140",
+};
+
+/**
  * Mainnet Configuration (placeholder - not yet deployed)
  */
 export const MAINNET_CONFIG: NetworkConfig = {
@@ -443,6 +476,25 @@ function esploraUrlForNetwork(net: string): string {
   }
 }
 
+/**
+ * Base config for an app network id. Two devnet deployments now exist, so this cannot be
+ * derived from NetworkType alone — that is what normalizeAppNetwork collapses away.
+ */
+function baseConfigForAppNetwork(network?: string): NetworkConfig {
+  switch (network) {
+    case "localnet":
+      return LOCALNET_CONFIG;
+    case "mainnet":
+      return MAINNET_CONFIG;
+    case "devnet-regtest":
+      return DEVNET_REGTEST_CONFIG;
+    case "devnet-testnet4":
+    case "devnet":
+    default:
+      return DEVNET_CONFIG;
+  }
+}
+
 function normalizeAppNetwork(network?: string): NetworkType {
   switch (network) {
     case "mainnet":
@@ -451,6 +503,7 @@ function normalizeAppNetwork(network?: string): NetworkType {
       return "localnet";
     case "devnet":
     case "devnet-regtest":
+    case "devnet-testnet4":
     default:
       return "devnet";
   }
@@ -462,6 +515,7 @@ function bitcoinNetworkForAppNetwork(network?: string): NetworkConfig["bitcoinNe
     case "devnet-regtest":
       return "regtest";
     case "devnet":
+    case "devnet-testnet4":
       return "testnet4";
     case "mainnet":
       return "mainnet";
@@ -499,7 +553,7 @@ export function setConfig(network: AppNetworkId | NetworkConfig): void {
     const baseNetwork = normalizeAppNetwork(network);
     switch (baseNetwork) {
       case "devnet":
-        currentConfig = DEVNET_CONFIG;
+        currentConfig = baseConfigForAppNetwork(network);
         break;
       case "mainnet":
         throw new Error(
@@ -586,11 +640,7 @@ export async function initConfig(overrides?: {
     "devnet";
   const networkId = normalizeAppNetwork(appNetworkId);
 
-  const baseConfig = networkId === "localnet"
-    ? LOCALNET_CONFIG
-    : networkId === "mainnet"
-      ? MAINNET_CONFIG
-      : DEVNET_CONFIG;
+  const baseConfig = baseConfigForAppNetwork(appNetworkId);
 
   const config = { ...baseConfig };
   const appBitcoinNetwork = bitcoinNetworkForAppNetwork(appNetworkId);
