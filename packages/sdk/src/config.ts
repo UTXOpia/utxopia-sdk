@@ -215,9 +215,14 @@ export const LOCALNET_CHADBUFFER_PROGRAM_ID: Address = address(
  * `ikaDwalletXOnlyPubkey` — `getConfig` re-derives poolStatePda, commitmentTreePda and poolVault
  * from the mint, so those two values are all a caller needs:
  *
- *   verified  mint  3chHiDqMXKSoqLohVdLdB1XQFef732DJoa45BsyB3KFF
- *             state 7wDtDd1uiJaVMSKh3XtteP6guqBLdkLDTAGh7E55WvZA
- *             xonly f450661b93b9081167f5bb885b33d9c469a905f37999a8cddbbe727cd6aaf497
+ *   verified  mint  G78CTddWGDaNaSKQayAt7m3pzcMyaUNxgR8y3R34YvEv
+ *             state Eqn9SmFYtacrdfPE9Shbi8bDXLjCNNz3WhHfqtJnwbKY
+ *             xonly 16c563baa11bfc8fe93acafe8fe169b954b3ead3ecda7754c615dec9e840b5a5
+ *
+ * Read off chain, not from the deploy notes: Eqn9SmFY… is the pool whose PoolState flags carry
+ * the permissioned bit (0b10 at offset 2). The deployment also contains a THIRD pool —
+ * 3chHiDqM… / 7wDtDd1u… — which the deploy notes name as the verified one but which is not
+ * permissioned and whose mint has zero supply. Treat it as abandoned; do not wire it up.
  */
 export const DEVNET_CONFIG: NetworkConfig = {
   network: "devnet",
