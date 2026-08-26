@@ -89,6 +89,29 @@ export function deriveTaprootAddress(
 }
 
 /**
+ * Commitment a `verify_deposit` (disc 25) deposit address is derived from.
+ *
+ * Both keys are hashed in. Binding the note key alone would leave the ephemeral
+ * pubkey caller-chosen on the Solana side: the credited amount and owner would
+ * still be right, but a substituted ephemeral key makes the stealth announcement
+ * undecryptable and the recipient never finds their note.
+ *
+ * Feed the result to `deriveTaprootAddress` as the commitment.
+ */
+export function depositTweakCommitment(
+  notePublicKey: Uint8Array,
+  ephemeralPubkey: Uint8Array
+): Uint8Array {
+  if (notePublicKey.length !== 32 || ephemeralPubkey.length !== 32) {
+    throw new Error("notePublicKey and ephemeralPubkey must be 32 bytes");
+  }
+  const material = new Uint8Array(64);
+  material.set(notePublicKey, 0);
+  material.set(ephemeralPubkey, 32);
+  return sha256(material);
+}
+
+/**
  * Verify that a Taproot address is correctly derived from a commitment
  *
  * @param address - Taproot address to verify

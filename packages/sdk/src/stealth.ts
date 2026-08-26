@@ -514,6 +514,68 @@ export async function createDirectVaultDeposit(
   };
 }
 
+/** A deposit whose address alone binds the note keys — no OP_RETURN. */
+export interface TweakDepositResult {
+  /** Taproot address to send BTC to */
+  btcAddress: string;
+  /** 32-byte x-only output key for the deposit P2TR output */
+  depositOutputKey: Uint8Array;
+  /** 32-byte note public key */
+  npk: Uint8Array;
+  /** 32-byte Ed25519 ephemeral public key */
+  ephemeralPub: Uint8Array;
+  /** sha256(npk || ephemeralPub) — the commitment the address is tweaked by */
+  tweakCommitment: Uint8Array;
+}
+
+/**
+ * Create a deposit for the OP_RETURN-free flow (`verify_deposit`, disc 25).
+ *
+ * The transaction carries nothing but a payment, so anything that can send to a
+ * P2TR address can fund it — a hardware wallet, an exchange withdrawal, a faucet.
+ * The note keys are recovered from instruction data at completion time and proven
+ * against this address's Taproot tweak, so substituting either key derives a
+ * different address that the funding transaction never paid.
+ *
+ * Sweep mode: the pool sweeps this address into its own custody, and that sweep
+ * is what gets SPV-verified. Register the address with the tracker BEFORE any
+ * coins are sent — a deposit with no OP_RETURN is invisible to block scanning,
+ * so an unregistered address is one nobody is watching.
+ */
+export async function createTweakDeposit(
+  recipientMeta: StealthMetaAddress,
+  vaultXOnlyPubkey: Uint8Array,
+  network: "mainnet" | "testnet" | "regtest" = "testnet",
+): Promise<TweakDepositResult> {
+  if (vaultXOnlyPubkey.length !== 32) {
+    throw new Error("vaultXOnlyPubkey must be 32 bytes");
+  }
+
+  const viewingPubKey = new Uint8Array(recipientMeta.viewingPubKey);
+  const ephemeral = ed25519GenerateKeyPair();
+  const sharedSecret = x25519Ecdh(ephemeral.privKey, viewingPubKey);
+  const stealthScalar = deriveStealthScalar(sharedSecret);
+  const recipientMPK = bytesToBigint(recipientMeta.mpk);
+  const npk = bigintToBytes(computeNPKSync(recipientMPK, stealthScalar));
+  const ephemeralPub = new Uint8Array(ephemeral.pubKey);
+
+  const { depositTweakCommitment, deriveTaprootAddress } = await import("./taproot");
+  const tweakCommitment = depositTweakCommitment(npk, ephemeralPub);
+  const { address, outputKey } = deriveTaprootAddress(
+    tweakCommitment,
+    network,
+    vaultXOnlyPubkey,
+  );
+
+  return {
+    btcAddress: address,
+    depositOutputKey: outputKey,
+    npk,
+    ephemeralPub,
+    tweakCommitment,
+  };
+}
+
 /**
  * Create a non-interactive deposit using the current SDK config.
  *

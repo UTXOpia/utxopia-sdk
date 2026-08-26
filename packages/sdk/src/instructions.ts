@@ -60,9 +60,12 @@ const INSTRUCTION = {
   REGISTER_TOKEN: 8,
   UPDATE_TOKEN_CONFIG: 9,
   CLAIM_FEES: 10,
-  // Deposit (11-12)
+  // Deposit (11-12, 25)
   COMPLETE_DEPOSIT: 11,
   SHIELD: 12,
+  /** OP_RETURN-free deposit: note keys ride in instruction data, proven by the
+   *  deposit address's Taproot tweak. */
+  VERIFY_DEPOSIT: 25,
   // JoinSplit (13-15) — all share n_in + n_out + n_pub + proof_source header
   TRANSACT: 13,
   UNSHIELD: 14,
@@ -1950,6 +1953,73 @@ export function buildCompleteDepositInstructionData(params: {
   view.setUint32(offset, params.sweepTxSize, true); offset += 4;
   view.setUint32(offset, params.depositTxSize, true); offset += 4;
   data.set(params.depositTxid, offset); offset += 32;
+
+  return data;
+}
+
+// =============================================================================
+// UTXOpia Verify Deposit (disc=25) — OP_RETURN-free
+// =============================================================================
+
+/**
+ * Build utxopia verify_deposit instruction data (disc=25).
+ *
+ * The OP_RETURN-free deposit path. `notePublicKey` + `ephemeralPubkey` travel in
+ * instruction data instead of in the Bitcoin transaction, and the program proves
+ * them against the deposit output's Taproot tweak — a different key pair derives
+ * a different address, which the funding transaction did not pay. Nothing marks
+ * the deposit as a UTXOpia transaction on chain, so any wallet or exchange that
+ * can send to a P2TR address can fund it.
+ *
+ * The address must be derived from `depositTweakCommitment(npk, eph)`, NOT from
+ * the note key alone — the program hashes both, so that a caller cannot swap in
+ * an ephemeral key that leaves the note undiscoverable.
+ *
+ * Sweep mode only: `depositTxSize` must be non-zero. The receipt PDA is seeded
+ * `["deposit_receipt", txid, vout]`, so pass `depositVout` to
+ * `deriveDepositReceiptPDA` for this flow.
+ *
+ * Layout: disc(1) + sweep_txid(32) + block_height(u64 LE) + sweep_tx_size(u32 LE)
+ *         + deposit_tx_size(u32 LE) + deposit_txid(32) + ephemeral_pubkey(32)
+ *         + note_public_key(32) + deposit_vout(u32 LE) = 149 bytes
+ */
+export function buildVerifyDepositInstructionData(params: {
+  sweepTxid: Uint8Array;        // 32 bytes, internal byte order
+  blockHeight: number;
+  sweepTxSize: number;
+  depositTxSize: number;        // must be > 0 — there is no direct-to-pool tweak to prove
+  depositTxid: Uint8Array;      // 32 bytes, internal byte order
+  ephemeralPubkey: Uint8Array;  // 32 bytes
+  notePublicKey: Uint8Array;    // 32 bytes
+  depositVout: number;
+}): Uint8Array {
+  for (const [name, value] of [
+    ["sweepTxid", params.sweepTxid],
+    ["depositTxid", params.depositTxid],
+    ["ephemeralPubkey", params.ephemeralPubkey],
+    ["notePublicKey", params.notePublicKey],
+  ] as const) {
+    if (value.length !== 32) {
+      throw new Error(`${name} must be 32 bytes, got ${value.length}`);
+    }
+  }
+  if (params.depositTxSize === 0) {
+    throw new Error("verify_deposit is sweep-mode only: depositTxSize must be non-zero");
+  }
+
+  const data = new Uint8Array(149);
+  const view = new DataView(data.buffer);
+  let offset = 0;
+
+  data[offset++] = INSTRUCTION.VERIFY_DEPOSIT;
+  data.set(params.sweepTxid, offset); offset += 32;
+  view.setBigUint64(offset, BigInt(params.blockHeight), true); offset += 8;
+  view.setUint32(offset, params.sweepTxSize, true); offset += 4;
+  view.setUint32(offset, params.depositTxSize, true); offset += 4;
+  data.set(params.depositTxid, offset); offset += 32;
+  data.set(params.ephemeralPubkey, offset); offset += 32;
+  data.set(params.notePublicKey, offset); offset += 32;
+  view.setUint32(offset, params.depositVout, true); offset += 4;
 
   return data;
 }
