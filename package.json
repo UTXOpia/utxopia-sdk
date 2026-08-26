@@ -1,6 +1,6 @@
 {
   "name": "@utxopia/sdk",
-  "version": "0.1.0-alpha.1",
+  "version": "0.1.0-alpha.2",
   "description": "UTXOpia public SDK workspace",
   "license": "MIT",
   "repository": {

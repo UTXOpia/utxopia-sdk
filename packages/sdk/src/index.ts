@@ -325,6 +325,7 @@ export {
 export {
   deriveTaprootAddress,
   deriveTaprootAddressWithRefund,
+  depositTweakCommitment,
   buildRefundScript,
   computeTapLeafHash,
   verifyTaprootAddress,
@@ -420,6 +421,14 @@ export {
   type SolanaPrivacyDomainContext,
   type SolanaPrivacyDomainKind,
 } from "./bound-params";
+
+export {
+  formatSpendDoc,
+  renderSpendDoc,
+  SpendDocMismatch,
+  type SpendDoc,
+  type SpendSignals,
+} from "./spend-doc";
 
 // ==========================================================================
 // Configuration
@@ -530,6 +539,7 @@ export {
   parseAnnouncementsFromHex,
   createDepositFromConfig,
   createDirectVaultDeposit,
+  createTweakDeposit,
   isDepositForViewer,
   isDepositForViewerHex,
   ANNOUNCEMENT_TYPE_DEPOSIT,
@@ -547,6 +557,7 @@ export {
   createNonInteractiveDeposit,
   pickIkaCustodyKey,
   type NonInteractiveDepositResult,
+  type TweakDepositResult,
   type NonInteractiveDepositWithRefundResult,
 } from "./stealth";
 
@@ -746,6 +757,7 @@ export {
   // Verify instruction data builders
   buildVerifyTransactionInstructionData,
   buildCompleteDepositInstructionData,
+  buildVerifyDepositInstructionData,
   // Pool config (disc 2) builder + parser
   buildSetPoolConfigInstructionData,
   parsePoolConfig,
