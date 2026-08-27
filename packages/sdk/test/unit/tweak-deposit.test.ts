@@ -8,6 +8,7 @@ import {
   depositLeafScript,
   DEPOSIT_NUMS_INTERNAL_KEY,
   verifyTaprootAddress,
+  deriveTaprootAddress,
   bytesToHex,
 } from "../../src/index";
 import type { StealthMetaAddress } from "../../src/index";
@@ -93,6 +94,22 @@ describe("createTweakDeposit", () => {
     expect(verifyTaprootAddress(deposit.btcAddress, deposit.leafHash, DEPOSIT_NUMS_INTERNAL_KEY))
       .toBe(true);
     expect(deposit.controlBlock.slice(1)).toEqual(DEPOSIT_NUMS_INTERNAL_KEY);
+
+    // A bcrt1 address used to be derived as testnet here, so this check passed
+    // only because it compared the output key — which is the same on every
+    // network. It now re-derives on regtest and compares the address itself.
+    const asRegtest = deriveTaprootAddress(
+      deposit.leafHash,
+      "regtest",
+      DEPOSIT_NUMS_INTERNAL_KEY,
+    ).address;
+    expect(asRegtest).toBe(deposit.btcAddress);
+
+    // An address whose prefix names no network we know is rejected outright,
+    // rather than defaulting to testnet.
+    const unknownHrp = deposit.btcAddress.replace(/^bcrt1/, "xyz1");
+    expect(verifyTaprootAddress(unknownHrp, deposit.leafHash, DEPOSIT_NUMS_INTERNAL_KEY))
+      .toBe(false);
   });
 
   test("a new index means a new address", async () => {

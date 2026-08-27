@@ -350,6 +350,7 @@ export {
   DEPOSIT_POOL_TAG_SIZE,
   DEPOSIT_OP_RETURN_SIZE,
   bech32Hrp,
+  networkForHrp,
   p2trAddress,
   type BitcoinNetwork,
   type DepositDestinationChain,

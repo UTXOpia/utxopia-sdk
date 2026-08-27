@@ -34,6 +34,28 @@ describe("isValidBitcoinAddress", () => {
     expect(result.network).toBe("testnet");
   });
 
+  /// bcrt1p was not in the accepted-prefix list at all, so a regtest taproot
+  /// address came back invalid — and the withdraw form rejected the very address
+  /// the app pre-fills there. The segwit-v0 branch reached regtest but returned
+  /// "testnet" from both arms of its ternary.
+  it("recognizes regtest P2TR (bcrt1p)", () => {
+    const addr =
+      "bcrt1pgrf0npjwa2t40vkwech0329wwpc4tqgs7478aaaq54eraae4v5sq30qlqf";
+    const result = isValidBitcoinAddress(addr);
+    expect(result.valid).toBe(true);
+    expect(result.type).toBe("p2tr");
+    expect(result.network).toBe("regtest");
+  });
+
+  it("recognizes regtest P2WPKH (bcrt1q)", () => {
+    const result = isValidBitcoinAddress(
+      "bcrt1qwfeed0tm4ty9wxxau0ssgfqmk29zv5e3qv3j3c",
+    );
+    expect(result.valid).toBe(true);
+    expect(result.type).toBe("p2wpkh");
+    expect(result.network).toBe("regtest");
+  });
+
   it("recognizes mainnet P2PKH (1...)", () => {
     const result = isValidBitcoinAddress("1A1zP1eP5QGefi2DMPTfTL5SLmv7DivfNa");
     expect(result.valid).toBe(true);

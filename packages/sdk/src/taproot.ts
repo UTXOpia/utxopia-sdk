@@ -205,14 +205,15 @@ export function verifyTaprootAddress(
       return false;
     }
 
-    const actualOutputKey = new Uint8Array(
-      bech32m.fromWords(decoded.words.slice(1))
-    );
+    const network = networkForHrp(decoded.prefix);
+    if (!network) return false;
 
-    const network = decoded.prefix === "bc" ? "mainnet" : "testnet";
     const expected = deriveTaprootAddress(commitment, network, internalKey);
 
-    return arraysEqual(actualOutputKey, expected.outputKey);
+    // Compare the whole address, not just the output key: the key is identical
+    // on every network, so an output-key match said nothing about the encoding.
+    // bech32 is case-insensitive, hence the fold.
+    return address.toLowerCase() === expected.address;
   } catch {
     return false;
   }
@@ -236,6 +237,23 @@ export type BitcoinNetwork = "mainnet" | "testnet" | "signet" | "regtest";
  */
 export function bech32Hrp(network: BitcoinNetwork): string {
   return network === "mainnet" ? "bc" : network === "regtest" ? "bcrt" : "tb";
+}
+
+/**
+ * The network an address's bech32 prefix names, or null if it names none.
+ *
+ * Null rather than a testnet default: an unrecognised prefix is an address this
+ * SDK cannot place, and quietly calling it testnet is how bcrt1 addresses ended
+ * up classified as testnet everywhere.
+ */
+export function networkForHrp(prefix: string): BitcoinNetwork | null {
+  return prefix === "bc"
+    ? "mainnet"
+    : prefix === "tb"
+      ? "testnet"
+      : prefix === "bcrt"
+        ? "regtest"
+        : null;
 }
 
 /**
@@ -290,18 +308,19 @@ export function parseP2TRScriptPubkey(
 export function isValidBitcoinAddress(address: string): {
   valid: boolean;
   type: "p2pkh" | "p2sh" | "p2wpkh" | "p2wsh" | "p2tr" | "unknown";
-  network: "mainnet" | "testnet" | "unknown";
+  network: BitcoinNetwork | "unknown";
 } {
   try {
     // Bech32m (Taproot)
-    if (address.startsWith("bc1p") || address.startsWith("tb1p")) {
+    if (
+      address.startsWith("bc1p") ||
+      address.startsWith("tb1p") ||
+      address.startsWith("bcrt1p")
+    ) {
       const decoded = bech32m.decode(address as `${string}1${string}`);
-      if (decoded.words[0] === 1 && decoded.words.length === 53) {
-        return {
-          valid: true,
-          type: "p2tr",
-          network: decoded.prefix === "bc" ? "mainnet" : "testnet",
-        };
+      const network = networkForHrp(decoded.prefix);
+      if (network && decoded.words[0] === 1 && decoded.words.length === 53) {
+        return { valid: true, type: "p2tr", network };
       }
     }
 
@@ -312,18 +331,10 @@ export function isValidBitcoinAddress(address: string): {
       address.startsWith("bcrt1q")
     ) {
       const decoded = bech32.decode(address as `${string}1${string}`);
-      if (decoded.words[0] === 0) {
+      const network = networkForHrp(decoded.prefix);
+      if (network && decoded.words[0] === 0) {
         const type = decoded.words.length === 33 ? "p2wpkh" : "p2wsh";
-        return {
-          valid: true,
-          type,
-          network:
-            decoded.prefix === "bc"
-              ? "mainnet"
-              : decoded.prefix === "bcrt"
-              ? "testnet"
-              : "testnet",
-        };
+        return { valid: true, type, network };
       }
     }
 
