@@ -1,5 +1,55 @@
 # Changelog
 
+## 0.1.0-alpha.5
+
+Makes regtest a network the SDK actually knows, and cuts the package's dead weight.
+
+alpha.4 gave the wallet deposit path an OP_RETURN-free flow, but it could not run
+on regtest: `buildDepositPsbt` folded regtest into `TEST_NETWORK`, which shares
+testnet's version bytes but not its bech32 prefix, so every `bcrt1` address failed
+to decode.
+
+**Fixed**
+- `buildDepositPsbt` — `network` accepts `"regtest"` and maps it to the `bcrt`
+  prefix. Verified end to end: a wallet-funded PSBT signed by a regtest node
+  produces a plain payment, and the deposit tracker mints it.
+- `isValidBitcoinAddress` — accepts `bcrt1p`, which it never did, so a regtest
+  taproot address no longer comes back invalid. Its segwit-v0 branch returned
+  `"testnet"` from both arms of a ternary that meant to reach regtest, so
+  `bcrt1q` was mislabelled too. `network` may now be `"regtest"`.
+- `verifyTaprootAddress` — rejects a bech32 prefix it does not recognise instead
+  of assuming testnet, and compares the encoded address rather than the output
+  key, which is identical on every network.
+
+**Added**
+- `BitcoinNetwork` — one alias for the network union, previously spelled out at
+  25 call sites across 8 files. The drift between two of those spellings is what
+  hid the regtest bug.
+- `bech32Hrp(network)` / `networkForHrp(prefix)` — the mapping in both
+  directions. `networkForHrp` returns `null` for an unknown prefix rather than
+  defaulting.
+- `p2trAddress(outputKey, network)` — shared by the four call sites that each
+  encoded a witness-v1 address by hand.
+
+**Removed**
+- Six subpath exports whose files have never existed: `./stealth`, `./solana`,
+  `./watcher`, `./watcher/web`, `./watcher/native`, `./react`. Importing any of
+  them was a resolution error. `.`, `./prover`, `./prover/web`, `./prover/mobile`
+  and `./bitcoin` are unaffected.
+- The permissioned/auditor instruction builders (`initializePermissioned`,
+  `setAuditorFrozen`, `setAuditorViewingPubkey`), which were never exported from
+  the package entry point and had no callers.
+- Eight unreferenced exports: `getCircuitPath`, `getGroth16VerifierProgramId`,
+  `buildVerifyInstructionData`, `AuxCircuitName`, `scalarToBytes`,
+  `BABYJUB_COFACTOR`, `computeTokenIdFromAddress`,
+  `unpackEncryptedAmountWithSign`.
+- The `bech32` dependency — `@scure/base` ships both codecs and was already
+  installed.
+
+**Changed**
+- `hexToBytes` / `bytesToHex` now delegate to `@noble/hashes`. The `0x` prefix is
+  still stripped, but malformed hex throws instead of decoding to zero bytes.
+
 ## 0.1.0-alpha.4
 
 Lets the wallet deposit path drop its OP_RETURN too.
