@@ -43,12 +43,15 @@ import {
   computeNullifierBytes,
   isDepositForViewerHex,
   createDepositFromConfig,
+  createTweakDeposit,
+  depositViewingNode,
   createStealthOutputWithKeys,
   type ScannedNote,
   type ViewOnlyKeys,
   type ViewOnlyScannedNote,
   type StealthOutputWithKeys,
   type NonInteractiveDepositResult,
+  type TweakDepositResult,
 } from "./stealth";
 import { selectUtxos, type UtxoDescriptor } from "./psbt";
 import { hexToBytes, bytesToHex, bigintToBytes } from "./crypto";
@@ -399,6 +402,54 @@ export class UTXOpiaClient {
   }
 
   // ─── Phase 2: Deposit + Shield ─────────────────────────────────
+
+  /**
+   * Prepare an OP_RETURN-free BTC deposit address (`verify_deposit`, disc 25).
+   *
+   * The ephemeral key is derived from this wallet's own viewing node and
+   * `depositIndex`, never randomly. A deposit address commits to the ephemeral
+   * key through its tapleaf and its key path is a NUMS point, so an address whose
+   * ephemeral key is lost is one nobody can ever spend. Indexing it makes the
+   * viewing key a complete backup: walk `depositIndex` upward and every address
+   * comes back.
+   *
+   * Self-deposit only. The address is recovered by whoever holds the viewing key
+   * it was derived from, so generating one *for someone else* would hand them a
+   * note they own but coins they could never recover. Pay a third party with a
+   * shielded transfer instead.
+   *
+   * `depositIndex` must be persisted and monotonic. Reusing one re-derives the
+   * same address, which is safe on chain but links the two deposits.
+   */
+  async prepareTweakDeposit(opts: {
+    depositIndex: number;
+    ikaXOnlyPubkey: Uint8Array;
+    recipient?: StealthMetaAddress;
+    network?: "mainnet" | "testnet" | "regtest";
+  }): Promise<TweakDepositResult> {
+    if (!this._keys) {
+      throw new Error("No keys (login first)");
+    }
+    const meta = opts.recipient ?? this._stealthAddress;
+    if (!meta) throw new Error("No recipient stealth address (login first or provide recipient)");
+    if (opts.recipient && this._stealthAddress && opts.recipient !== this._stealthAddress) {
+      throw new Error(
+        "prepareTweakDeposit is self-deposit only: the recipient must be able to derive the " +
+          "ephemeral key to recover the coins, and only this wallet's viewing key can",
+      );
+    }
+
+    const network = opts.network ?? sdkBitcoinNetworkToAddressNetwork(this.config.bitcoinNetwork);
+    return createTweakDeposit(
+      meta,
+      opts.ikaXOnlyPubkey,
+      {
+        viewingNode: depositViewingNode(this._keys.viewingPrivKey),
+        depositIndex: opts.depositIndex,
+      },
+      network,
+    );
+  }
 
   /**
    * Prepare a BTC deposit: generate stealth deposit address + OP_RETURN.

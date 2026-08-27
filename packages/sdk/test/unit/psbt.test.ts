@@ -1,4 +1,4 @@
-import { describe, it, expect } from "bun:test";
+import { describe, it, test, expect } from "bun:test";
 import * as btc from "@scure/btc-signer";
 import { hex } from "@scure/base";
 import { selectUtxos, estimateDepositFee, buildDepositPsbt } from "../../src/psbt";
@@ -159,3 +159,78 @@ describe("buildDepositPsbt", () => {
     expect(opReturnOutput.amount).toBe(0n);
   });
 });
+
+describe("OP_RETURN-free deposit PSBT", () => {
+  const utxos = [{
+    txid: "11".repeat(32),
+    vout: 0,
+    value: 200_000,
+    scriptPubkeyHex: "5120" + "aa".repeat(32),
+  }];
+  const depositAddress = "tb1pksj664hdqkzvw2tlfvqshnevxt2qdutk47p9z964dkcsxazmf0vsjas4n4";
+  const changeAddress = "tb1pksj664hdqkzvw2tlfvqshnevxt2qdutk47p9z964dkcsxazmf0vsjas4n4";
+
+  /// A tweak-bound deposit's address binds the note keys through its tapleaf, so
+  /// the transaction carries no metadata at all. That is the whole point: an
+  /// exchange withdrawal form cannot attach an OP_RETURN, and a transaction with
+  /// one is identifiable as a UTXOpia deposit on chain.
+  test("omitting the payload produces a plain payment", () => {
+    const withOut = buildDepositPsbt({
+      senderUtxos: utxos, depositAddress, depositAmountSats: 50_000,
+      changeAddress, feeRate: 2, network: "testnet",
+    });
+    const withIn = buildDepositPsbt({
+      senderUtxos: utxos, depositAddress, depositAmountSats: 50_000,
+      opReturnPayload: new Uint8Array(73), changeAddress, feeRate: 2, network: "testnet",
+    });
+
+    // One output fewer, and it is the data one that is gone.
+    expect(withOut.psbtBase64).not.toBe(withIn.psbtBase64);
+    expect(withOut.estimatedFee).toBeLessThan(withIn.estimatedFee);
+    expect(withOut.changeAmount).toBeGreaterThan(withIn.changeAmount);
+  });
+
+  /// Regtest shares testnet's version bytes but not its bech32 hrp. Folding the
+  /// two together made every bcrt1 address fail to decode, which took the whole
+  /// wallet deposit path out on the one network that can exercise it end to end.
+  test("regtest addresses build, and are not interchangeable with testnet", () => {
+    const bcrt = "bcrt1pgrf0npjwa2t40vkwech0329wwpc4tqgs7478aaaq54eraae4v5sq30qlqf";
+    const built = buildDepositPsbt({
+      senderUtxos: utxos, depositAddress: bcrt, depositAmountSats: 50_000,
+      changeAddress: bcrt, feeRate: 2, network: "regtest",
+    });
+    expect(built.psbtBase64.length).toBeGreaterThan(0);
+
+    expect(() => buildDepositPsbt({
+      senderUtxos: utxos, depositAddress: bcrt, depositAmountSats: 50_000,
+      changeAddress: bcrt, feeRate: 2, network: "testnet",
+    })).toThrow();
+    expect(() => buildDepositPsbt({
+      senderUtxos: utxos, depositAddress, depositAmountSats: 50_000,
+      changeAddress, feeRate: 2, network: "regtest",
+    })).toThrow();
+  });
+
+  test("a mis-sized payload is still rejected", () => {
+    expect(() => buildDepositPsbt({
+      senderUtxos: utxos, depositAddress, depositAmountSats: 50_000,
+      opReturnPayload: new Uint8Array(40), changeAddress, feeRate: 2, network: "testnet",
+    })).toThrow(/73 bytes/);
+  });
+
+  test("the fee drops by exactly one OP_RETURN output", () => {
+    const rate = 3;
+    const withOpReturn = estimateDepositFee(1, rate, "p2tr", true, true);
+    const without = estimateDepositFee(1, rate, "p2tr", true, false);
+
+    // Whatever the constant is, the difference must be one whole output's worth
+    // and nothing else — a change here means the estimate drifted from the shape
+    // the builder actually produces.
+    const delta = (withOpReturn - without) / rate;
+    expect(Number.isInteger(delta)).toBe(true);
+    expect(delta).toBeGreaterThan(0);
+    expect(estimateDepositFee(1, rate, "p2tr", false, false))
+      .toBeLessThan(estimateDepositFee(1, rate, "p2tr", true, false));
+  });
+});
+

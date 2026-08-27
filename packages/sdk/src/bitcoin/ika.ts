@@ -8,7 +8,7 @@
  */
 
 import { taggedHash, hexToBytes, bytesToHex } from "../crypto";
-import { bech32m } from "bech32";
+import { p2trAddress } from "../taproot";
 import { secp256k1 } from "@noble/curves/secp256k1.js";
 
 /**
@@ -52,10 +52,7 @@ export function deriveCustodyAddressFromIkaDWallet(
   // Drop the 1-byte parity prefix to get the x-only output key.
   const outputKey = hexToBytes(outputPoint.toHex(true).slice(2));
 
-  const hrp =
-    network === "mainnet" ? "bc" : network === "regtest" ? "bcrt" : "tb";
-  const words = bech32m.toWords(outputKey);
-  return bech32m.encode(hrp, [1, ...words]);
+  return p2trAddress(outputKey, network);
 }
 
 /**
@@ -72,9 +69,7 @@ export function deriveRawXOnlyP2TRAddress(
   if (xonlyPubkey.length !== 32) {
     throw new Error("xonlyPubkey must be 32 bytes");
   }
-  const hrp =
-    network === "mainnet" ? "bc" : network === "regtest" ? "bcrt" : "tb";
-  return bech32m.encode(hrp, [1, ...bech32m.toWords(xonlyPubkey)]);
+  return p2trAddress(xonlyPubkey, network);
 }
 
 function extractXOnly(ref: IkaDWalletRef): Uint8Array {

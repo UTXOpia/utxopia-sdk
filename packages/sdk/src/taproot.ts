@@ -37,6 +37,8 @@ export function deriveTaprootAddress(
   address: string;
   outputKey: Uint8Array;
   tweak: Uint8Array;
+  /** y-parity of the output key — the low bit of a script-path control block. */
+  parity: number;
 } {
   if (!internalKey) {
     throw new Error("Internal key is required; pass the configured FROST/Ika x-only key");
@@ -75,28 +77,25 @@ export function deriveTaprootAddress(
   const outputKeyHex = outputPoint.toHex(true); // 33-byte compressed hex
   const outputKey = hexToBytes(outputKeyHex.slice(2)); // drop "02"/"03" prefix
 
-  // Encode as bech32m address
-  const hrp = network === "mainnet" ? "bc" : network === "regtest" ? "bcrt" : "tb";
-  const words = bech32.bech32m.toWords(outputKey);
-  // Witness version 1 for taproot
-  const address = bech32.bech32m.encode(hrp, [1, ...words]);
+  const address = p2trAddress(outputKey, network);
 
   return {
     address,
     outputKey,
     tweak,
+    parity: outputKeyHex.startsWith("03") ? 1 : 0,
   };
 }
 
 /**
- * Commitment a `verify_deposit` (disc 25) deposit address is derived from.
+ * Per-deposit commitment carried in a `verify_deposit` (disc 25) address's tapleaf.
  *
  * Both keys are hashed in. Binding the note key alone would leave the ephemeral
  * pubkey caller-chosen on the Solana side: the credited amount and owner would
  * still be right, but a substituted ephemeral key makes the stealth announcement
  * undecryptable and the recipient never finds their note.
  *
- * Feed the result to `deriveTaprootAddress` as the commitment.
+ * Feed the result to `deriveDepositAddress`.
  */
 export function depositTweakCommitment(
   notePublicKey: Uint8Array,
@@ -109,6 +108,81 @@ export function depositTweakCommitment(
   material.set(notePublicKey, 0);
   material.set(ephemeralPubkey, 32);
   return sha256(material);
+}
+
+/**
+ * BIP-341's suggested NUMS point, used as the deposit address's internal key.
+ *
+ * Nobody knows its discrete log, so the key path is unspendable and custody
+ * rests entirely on the script path. That is deliberate: Ika's MPC cannot sign
+ * for a tweaked key, so an address whose internal key were the dWallet key plus
+ * a per-deposit tweak would be unspendable by the custodian meant to sweep it.
+ */
+export const DEPOSIT_NUMS_INTERNAL_KEY = hexToBytes(
+  "50929b74c1a04954b78b4b6035e97a5e078a5a0f28ec96d547bfee9ace803ac0"
+);
+
+/**
+ * The single tapleaf a deposit address commits to:
+ *
+ * ```text
+ * <commitment> OP_DROP <ika_xonly> OP_CHECKSIG
+ * ```
+ *
+ * The commitment rides in the script purely to make the leaf — and so the
+ * address — unique per deposit; `OP_DROP` discards it at spend time. Only the
+ * dWallet key can satisfy the `OP_CHECKSIG`, and it signs untweaked.
+ */
+export function depositLeafScript(
+  commitment: Uint8Array,
+  ikaXOnlyPubkey: Uint8Array
+): Uint8Array {
+  if (commitment.length !== 32 || ikaXOnlyPubkey.length !== 32) {
+    throw new Error("commitment and ikaXOnlyPubkey must be 32 bytes");
+  }
+  const script = new Uint8Array(68);
+  script[0] = 0x20; // push 32 bytes
+  script.set(commitment, 1);
+  script[33] = 0x75; // OP_DROP
+  script[34] = 0x20; // push 32 bytes
+  script.set(ikaXOnlyPubkey, 35);
+  script[67] = 0xac; // OP_CHECKSIG
+  return script;
+}
+
+/**
+ * Derive a deposit address bound to `commitment`, spendable only by the pool's
+ * Ika dWallet via the script path.
+ *
+ * Returns everything the sweeper needs to spend it: a script-path witness is
+ * `[signature, leafScript, controlBlock]`.
+ */
+export function deriveDepositAddress(
+  commitment: Uint8Array,
+  ikaXOnlyPubkey: Uint8Array,
+  network: "mainnet" | "testnet" | "regtest" = "testnet"
+): {
+  address: string;
+  outputKey: Uint8Array;
+  leafScript: Uint8Array;
+  leafHash: Uint8Array;
+  controlBlock: Uint8Array;
+} {
+  const leafScript = depositLeafScript(commitment, ikaXOnlyPubkey);
+  // One leaf, so the leaf hash IS the merkle root.
+  const leafHash = computeTapLeafHash(leafScript);
+  const { address, outputKey, parity } = deriveTaprootAddress(
+    leafHash,
+    network,
+    DEPOSIT_NUMS_INTERNAL_KEY
+  );
+
+  // <leaf_version | parity> || internal_key. No merkle path: single leaf.
+  const controlBlock = new Uint8Array(33);
+  controlBlock[0] = 0xc0 | parity;
+  controlBlock.set(DEPOSIT_NUMS_INTERNAL_KEY, 1);
+
+  return { address, outputKey, leafScript, leafHash, controlBlock };
 }
 
 /**
@@ -142,6 +216,27 @@ export function verifyTaprootAddress(
   } catch {
     return false;
   }
+}
+
+/**
+ * bech32 human-readable prefix for a Bitcoin network.
+ *
+ * Regtest is the reason this exists: it shares testnet's version bytes but not
+ * its prefix, and every place that folded the two together produced addresses
+ * no regtest node would accept.
+ */
+export function bech32Hrp(network: "mainnet" | "testnet" | "signet" | "regtest"): string {
+  return network === "mainnet" ? "bc" : network === "regtest" ? "bcrt" : "tb";
+}
+
+/**
+ * Encode an x-only output key as a witness-v1 (P2TR) address.
+ */
+export function p2trAddress(
+  outputKey: Uint8Array,
+  network: "mainnet" | "testnet" | "signet" | "regtest",
+): string {
+  return bech32.bech32m.encode(bech32Hrp(network), [1, ...bech32.bech32m.toWords(outputKey)]);
 }
 
 /**
@@ -594,9 +689,7 @@ export function deriveTaprootAddressWithRefund(
   controlBlock.set(internalKey, 1);
 
   // 7. Encode as bech32m address
-  const hrp = network === "mainnet" ? "bc" : network === "regtest" ? "bcrt" : "tb";
-  const words = bech32.bech32m.toWords(outputKey);
-  const address = bech32.bech32m.encode(hrp, [1, ...words]);
+  const address = p2trAddress(outputKey, network);
 
   return {
     address,

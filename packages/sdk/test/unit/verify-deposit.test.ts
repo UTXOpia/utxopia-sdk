@@ -1,6 +1,7 @@
 import { describe, expect, test } from "bun:test";
 import {
   buildVerifyDepositInstructionData,
+  buildVerifyDepositPermissionedInstructionData,
   depositTweakCommitment,
   bytesToHex,
 } from "../../src/index";
@@ -18,8 +19,6 @@ const params = {
   sweepTxid: new Uint8Array(32).fill(0xaa),
   blockHeight: 900,
   sweepTxSize: 300,
-  depositTxSize: 250,
-  depositTxid: new Uint8Array(32).fill(0xbb),
   ephemeralPubkey: eph,
   notePublicKey: npk,
   depositVout: 3,
@@ -35,17 +34,29 @@ describe("buildVerifyDepositInstructionData", () => {
     expect(data.slice(1, 33)).toEqual(params.sweepTxid);
     expect(Number(view.getBigUint64(33, true))).toBe(900);
     expect(view.getUint32(41, true)).toBe(300);
-    expect(view.getUint32(45, true)).toBe(250);
-    expect(data.slice(49, 81)).toEqual(params.depositTxid);
+    // No second transaction, and the proven txid IS the deposit txid.
+    expect(view.getUint32(45, true)).toBe(0);
+    expect(data.slice(49, 81)).toEqual(params.sweepTxid);
     expect(data.slice(81, 113)).toEqual(eph);
     expect(data.slice(113, 145)).toEqual(npk);
     expect(view.getUint32(145, true)).toBe(3);
   });
 
-  test("refuses direct-to-pool, which has no tweaked address to prove", () => {
+  test("refuses a second transaction — there is no sweep to describe", () => {
     expect(() =>
-      buildVerifyDepositInstructionData({ ...params, depositTxSize: 0 }),
-    ).toThrow(/sweep-mode only/);
+      buildVerifyDepositInstructionData({ ...params, depositTxSize: 250 }),
+    ).toThrow(/no second transaction/);
+  });
+
+  test("refuses a deposit txid that is not the proven one", () => {
+    // The credited output is read out of the SPV-proven transaction, so naming a
+    // different deposit txid would credit an output nothing proved.
+    expect(() =>
+      buildVerifyDepositInstructionData({
+        ...params,
+        depositTxid: new Uint8Array(32).fill(0xbb),
+      }),
+    ).toThrow(/must equal sweepTxid/);
   });
 
   test("refuses a mis-sized key instead of silently padding it", () => {
@@ -69,3 +80,35 @@ describe("depositTweakCommitment", () => {
     expect(depositTweakCommitment(npk, eph)).not.toEqual(depositTweakCommitment(npk, otherEph));
   });
 });
+
+describe("buildVerifyDepositPermissionedInstructionData", () => {
+  /// The policy approval is bound to the WHOLE payload, so the permissioned
+  /// payload must be the public one byte for byte apart from the discriminator,
+  /// with the ciphertext appended — not a re-serialisation that could drift.
+  test("is the disc-25 payload with a new discriminator and a ciphertext tail", () => {
+    const ciphertext = new Uint8Array(40).fill(0xc1);
+    const permissioned = buildVerifyDepositPermissionedInstructionData({
+      ...params,
+      auditorCiphertext: ciphertext,
+    });
+    const base = buildVerifyDepositInstructionData(params);
+
+    expect(permissioned[0]).toBe(26);
+    expect(base[0]).toBe(25);
+    expect(permissioned.slice(1, base.length)).toEqual(base.slice(1));
+    expect(permissioned.slice(base.length)).toEqual(ciphertext);
+  });
+
+  test("an absent ciphertext is a valid payload, not a truncated one", () => {
+    const permissioned = buildVerifyDepositPermissionedInstructionData(params);
+    expect(permissioned.length).toBe(buildVerifyDepositInstructionData(params).length);
+    expect(permissioned[0]).toBe(26);
+  });
+
+  test("inherits the no-sweep checks rather than restating them", () => {
+    expect(() =>
+      buildVerifyDepositPermissionedInstructionData({ ...params, depositTxSize: 250 }),
+    ).toThrow(/no second transaction/);
+  });
+});
+

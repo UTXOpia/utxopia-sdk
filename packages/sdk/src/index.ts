@@ -326,6 +326,9 @@ export {
   deriveTaprootAddress,
   deriveTaprootAddressWithRefund,
   depositTweakCommitment,
+  deriveDepositAddress,
+  depositLeafScript,
+  DEPOSIT_NUMS_INTERNAL_KEY,
   buildRefundScript,
   computeTapLeafHash,
   verifyTaprootAddress,
@@ -540,6 +543,11 @@ export {
   createDepositFromConfig,
   createDirectVaultDeposit,
   createTweakDeposit,
+  depositEphemeralKeyPair,
+  depositViewingNode,
+  outgoingViewingNode,
+  outgoingEphemeralKeyPair,
+  findNextSendIndex,
   isDepositForViewer,
   isDepositForViewerHex,
   ANNOUNCEMENT_TYPE_DEPOSIT,
@@ -558,6 +566,8 @@ export {
   pickIkaCustodyKey,
   type NonInteractiveDepositResult,
   type TweakDepositResult,
+  type DepositRecoveryMaterial,
+  type OutgoingRecoveryMaterial,
   type NonInteractiveDepositWithRefundResult,
 } from "./stealth";
 
@@ -758,6 +768,7 @@ export {
   buildVerifyTransactionInstructionData,
   buildCompleteDepositInstructionData,
   buildVerifyDepositInstructionData,
+  buildVerifyDepositPermissionedInstructionData,
   // Pool config (disc 2) builder + parser
   buildSetPoolConfigInstructionData,
   parsePoolConfig,

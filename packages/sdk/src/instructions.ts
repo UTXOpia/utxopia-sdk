@@ -12,6 +12,7 @@ import {
   type Address,
 } from "@solana/kit";
 import { sha256 } from "@noble/hashes/sha2.js";
+import { bytesToHex as toHex } from "./crypto";
 
 import { address, getConfig, TOKEN_2022_PROGRAM_ID } from "./config";
 import { type AuditorCiphertextInput, resolveAuditorCiphertext } from "./auditor-ciphertext";
@@ -64,7 +65,7 @@ const INSTRUCTION = {
   COMPLETE_DEPOSIT: 11,
   SHIELD: 12,
   /** OP_RETURN-free deposit: note keys ride in instruction data, proven by the
-   *  deposit address's Taproot tweak. */
+   *  deposit address's tapleaf. */
   VERIFY_DEPOSIT: 25,
   // JoinSplit (13-15) — all share n_in + n_out + n_pub + proof_source header
   TRANSACT: 13,
@@ -100,6 +101,8 @@ const INSTRUCTION = {
 const PERMISSIONED_DISC = {
   INITIALIZE_PERMISSIONED: 21,
   COMPLETE_DEPOSIT_PERMISSIONED: 22,
+  /** Same binding as VERIFY_DEPOSIT, plus the permissioned pool's policy gate. */
+  VERIFY_DEPOSIT_PERMISSIONED: 26,
   SHIELD_PERMISSIONED: 23,
   REGISTER_EXIT_DESTINATION: 39,
 } as const;
@@ -1966,16 +1969,19 @@ export function buildCompleteDepositInstructionData(params: {
  *
  * The OP_RETURN-free deposit path. `notePublicKey` + `ephemeralPubkey` travel in
  * instruction data instead of in the Bitcoin transaction, and the program proves
- * them against the deposit output's Taproot tweak — a different key pair derives
- * a different address, which the funding transaction did not pay. Nothing marks
- * the deposit as a UTXOpia transaction on chain, so any wallet or exchange that
- * can send to a P2TR address can fund it.
+ * them against the deposit output's tapleaf — a different key pair derives a
+ * different leaf, and so a different address, which the funding transaction did
+ * not pay. Nothing marks the deposit as a UTXOpia transaction on chain, so any
+ * wallet or exchange that can send to a P2TR address can fund it.
  *
- * The address must be derived from `depositTweakCommitment(npk, eph)`, NOT from
- * the note key alone — the program hashes both, so that a caller cannot swap in
- * an ephemeral key that leaves the note undiscoverable.
+ * Derive the address with `deriveDepositAddress(depositTweakCommitment(npk, eph),
+ * ikaXOnlyPubkey)`. Both keys are hashed into the leaf, so a caller cannot swap
+ * in an ephemeral key that leaves the note undiscoverable.
  *
- * Sweep mode only: `depositTxSize` must be non-zero. The receipt PDA is seeded
+ * No sweep: the deposit output's tapleaf names the pool's own dWallet key, so it
+ * is already under pool custody and is recorded as a pool UTXO directly. The
+ * SPV-verified transaction must therefore BE the deposit — `depositTxSize` is 0
+ * and `depositTxid` defaults to `sweepTxid`. The receipt PDA is seeded
  * `["deposit_receipt", txid, vout]`, so pass `depositVout` to
  * `deriveDepositReceiptPDA` for this flow.
  *
@@ -1984,18 +1990,19 @@ export function buildCompleteDepositInstructionData(params: {
  *         + note_public_key(32) + deposit_vout(u32 LE) = 149 bytes
  */
 export function buildVerifyDepositInstructionData(params: {
-  sweepTxid: Uint8Array;        // 32 bytes, internal byte order
+  sweepTxid: Uint8Array;        // 32 bytes, internal byte order — the SPV-proven tx
   blockHeight: number;
   sweepTxSize: number;
-  depositTxSize: number;        // must be > 0 — there is no direct-to-pool tweak to prove
-  depositTxid: Uint8Array;      // 32 bytes, internal byte order
+  depositTxSize?: number;       // must be 0 or omitted: there is no second transaction
+  depositTxid?: Uint8Array;     // defaults to sweepTxid, which it must equal
   ephemeralPubkey: Uint8Array;  // 32 bytes
   notePublicKey: Uint8Array;    // 32 bytes
   depositVout: number;
 }): Uint8Array {
+  const depositTxid = params.depositTxid ?? params.sweepTxid;
   for (const [name, value] of [
     ["sweepTxid", params.sweepTxid],
-    ["depositTxid", params.depositTxid],
+    ["depositTxid", depositTxid],
     ["ephemeralPubkey", params.ephemeralPubkey],
     ["notePublicKey", params.notePublicKey],
   ] as const) {
@@ -2003,8 +2010,11 @@ export function buildVerifyDepositInstructionData(params: {
       throw new Error(`${name} must be 32 bytes, got ${value.length}`);
     }
   }
-  if (params.depositTxSize === 0) {
-    throw new Error("verify_deposit is sweep-mode only: depositTxSize must be non-zero");
+  if (params.depositTxSize) {
+    throw new Error("verify_deposit takes no second transaction: depositTxSize must be 0");
+  }
+  if (toHex(depositTxid) !== toHex(params.sweepTxid)) {
+    throw new Error("verify_deposit proves the deposit itself: depositTxid must equal sweepTxid");
   }
 
   const data = new Uint8Array(149);
@@ -2015,12 +2025,38 @@ export function buildVerifyDepositInstructionData(params: {
   data.set(params.sweepTxid, offset); offset += 32;
   view.setBigUint64(offset, BigInt(params.blockHeight), true); offset += 8;
   view.setUint32(offset, params.sweepTxSize, true); offset += 4;
-  view.setUint32(offset, params.depositTxSize, true); offset += 4;
-  data.set(params.depositTxid, offset); offset += 32;
+  view.setUint32(offset, 0, true); offset += 4; // no second transaction
+  data.set(depositTxid, offset); offset += 32;
   data.set(params.ephemeralPubkey, offset); offset += 32;
   data.set(params.notePublicKey, offset); offset += 32;
   view.setUint32(offset, params.depositVout, true); offset += 4;
 
+  return data;
+}
+
+/**
+ * Build utxopia verify_deposit_permissioned instruction data (disc=26).
+ *
+ * `buildVerifyDepositInstructionData`'s payload with a different discriminator
+ * and an auditor ciphertext appended. The tapleaf already tells the pools apart —
+ * each carries its own Ika custody key — but that is not the same as clearing the
+ * pool's policy, which is what a permissioned pool exists for.
+ *
+ * The one-time PolicyApproval is bound to the WHOLE payload, ciphertext included,
+ * so these exact bytes must be the ones approved.
+ */
+export function buildVerifyDepositPermissionedInstructionData(
+  params: Parameters<typeof buildVerifyDepositInstructionData>[0] & {
+    auditorCiphertext?: Uint8Array;
+  },
+): Uint8Array {
+  const base = buildVerifyDepositInstructionData(params);
+  const ciphertext = params.auditorCiphertext ?? new Uint8Array(0);
+
+  const data = new Uint8Array(base.length + ciphertext.length);
+  data.set(base, 0);
+  data.set(ciphertext, base.length);
+  data[0] = PERMISSIONED_DISC.VERIFY_DEPOSIT_PERMISSIONED;
   return data;
 }
 

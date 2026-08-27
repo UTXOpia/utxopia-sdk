@@ -64,6 +64,7 @@ import {
 } from "./crypto";
 import {
   ed25519GenerateKeyPair,
+  ed25519KeyPairFromMaterial,
   x25519Ecdh,
   encryptAmountEd25519,
   decryptAmountEd25519,
@@ -265,12 +266,19 @@ export async function createStealthDeposit(
   recipientMeta: StealthMetaAddress,
   amountSats: bigint,
   tokenId: bigint,
+  outgoing?: OutgoingRecoveryMaterial,
 ): Promise<StealthDeposit> {
   // Only viewingPubKey + mpk needed (spendingPubKey not used by sender)
   const viewingPubKey = new Uint8Array(recipientMeta.viewingPubKey);
 
-  // Generate Ed25519 ephemeral keypair
-  const ephemeral = ed25519GenerateKeyPair();
+  // Indexed off the sender's outgoing node when supplied, so they can recompute
+  // this payment later; random otherwise, which works but leaves no trace the
+  // sender can recover. Optional rather than required because the cost of
+  // omitting it is a lost record, not lost funds — unlike a deposit address,
+  // where the ephemeral key IS the only way to ever spend the coins.
+  const ephemeral = outgoing
+    ? outgoingEphemeralKeyPair(outgoing)
+    : ed25519GenerateKeyPair();
 
   // X25519 ECDH: shared secret
   const sharedSecret = x25519Ecdh(ephemeral.privKey, viewingPubKey);
@@ -514,6 +522,172 @@ export async function createDirectVaultDeposit(
   };
 }
 
+const DEPOSIT_VIEWING_NODE_DOMAIN = new TextEncoder().encode("utxopia:deposit-viewing-node:v1");
+const DEPOSIT_EPHEMERAL_DOMAIN = new TextEncoder().encode("utxopia:deposit-ephemeral:v1");
+
+/**
+ * The delegable half of deposit recovery.
+ *
+ * Deposit addresses are derived from this node, so whoever holds it can rebuild
+ * every address the owner was ever handed, and with it every tapleaf and control
+ * block needed to spend those coins. It grants no spend authority over notes:
+ * that needs the spending key and the nullifying key, neither of which is
+ * derivable from here.
+ *
+ * Derived from the viewing key rather than the master seed on purpose. It means
+ * an owner can hand a chosen party — another device, a custodian, the pool
+ * operator — the ability to recover their BTC without handing over the ability
+ * to spend their notes. Same split Fluidkey uses for its ephemeral key nodes.
+ */
+export function depositViewingNode(viewingPrivKey: Uint8Array): Uint8Array {
+  if (viewingPrivKey.length === 0) {
+    throw new Error("viewingPrivKey must not be empty");
+  }
+  const material = new Uint8Array(DEPOSIT_VIEWING_NODE_DOMAIN.length + viewingPrivKey.length);
+  material.set(DEPOSIT_VIEWING_NODE_DOMAIN, 0);
+  material.set(viewingPrivKey, DEPOSIT_VIEWING_NODE_DOMAIN.length);
+  return sha256(material);
+}
+
+const OUTGOING_VIEWING_NODE_DOMAIN = new TextEncoder().encode(
+  "utxopia:outgoing-viewing-node:v1",
+);
+const OUTGOING_EPHEMERAL_DOMAIN = new TextEncoder().encode("utxopia:outgoing-ephemeral:v1");
+
+/**
+ * The delegable half of *outgoing* history.
+ *
+ * An announcement is encrypted to the recipient's viewing key, and the sender
+ * discards the ephemeral private key — so today a sender cannot rediscover what
+ * they paid out. Their history exists only in local storage. Indexing the
+ * ephemeral key off this node makes every outgoing payment recomputable from
+ * keys alone. Zcash calls the equivalent an outgoing viewing key.
+ *
+ * Deliberately a different node from `depositViewingNode`. The two authorise
+ * different things, and one should not smuggle in the other:
+ *
+ * - deposit node  → "you can recover my BTC"
+ * - outgoing node → "you can see who I paid"
+ */
+export function outgoingViewingNode(viewingPrivKey: Uint8Array): Uint8Array {
+  if (viewingPrivKey.length === 0) {
+    throw new Error("viewingPrivKey must not be empty");
+  }
+  const material = new Uint8Array(OUTGOING_VIEWING_NODE_DOMAIN.length + viewingPrivKey.length);
+  material.set(OUTGOING_VIEWING_NODE_DOMAIN, 0);
+  material.set(viewingPrivKey, OUTGOING_VIEWING_NODE_DOMAIN.length);
+  return sha256(material);
+}
+
+/** Which outgoing payment an ephemeral key belongs to. */
+export interface OutgoingRecoveryMaterial {
+  /** From `outgoingViewingNode(viewingPrivKey)`. */
+  outgoingNode: Uint8Array;
+  /** Monotonic per-sender counter. One payment per index. */
+  sendIndex: number;
+}
+
+/** `sha256(domain || outgoingNode || sendIndex)` → Ed25519 ephemeral keypair. */
+export function outgoingEphemeralKeyPair(outgoing: OutgoingRecoveryMaterial): {
+  privKey: Uint8Array;
+  pubKey: Uint8Array;
+} {
+  const { outgoingNode, sendIndex } = outgoing;
+  if (outgoingNode.length === 0) {
+    throw new Error("outgoingNode must not be empty");
+  }
+  if (!Number.isInteger(sendIndex) || sendIndex < 0) {
+    throw new Error(`invalid sendIndex: ${sendIndex}`);
+  }
+
+  const material = new Uint8Array(OUTGOING_EPHEMERAL_DOMAIN.length + outgoingNode.length + 4);
+  material.set(OUTGOING_EPHEMERAL_DOMAIN, 0);
+  material.set(outgoingNode, OUTGOING_EPHEMERAL_DOMAIN.length);
+  new DataView(material.buffer).setUint32(
+    OUTGOING_EPHEMERAL_DOMAIN.length + outgoingNode.length,
+    sendIndex,
+    true,
+  );
+  return ed25519KeyPairFromMaterial(material);
+}
+
+/**
+ * Recover the next unused send index by walking 0 upward against the ephemeral
+ * pubkeys already on chain.
+ *
+ * An index is "used" when some announcement carries the ephemeral pubkey it
+ * derives. Scanning stops after `gapLimit` consecutive misses, because a
+ * derived-but-never-broadcast payment leaves a hole — an abandoned or failed
+ * transaction — and stopping at the first hole would hand back an index that is
+ * already spoken for.
+ *
+ * This is a FLOOR, not the live counter. A payment broadcast but not yet indexed
+ * is invisible here, so a sender that keeps local state must take
+ * `max(localCounter, findNextSendIndex(...))`. Reusing an index re-derives the
+ * same ephemeral key, and to the same recipient that means the same note
+ * commitment twice.
+ */
+export function findNextSendIndex(
+  outgoingNode: Uint8Array,
+  seenEphemeralPubs: Iterable<Uint8Array>,
+  gapLimit = 20,
+): number {
+  const seen = new Set<string>();
+  for (const pub of seenEphemeralPubs) seen.add(bytesToHex(pub));
+
+  let highestUsed = -1;
+  let misses = 0;
+  for (let index = 0; misses <= gapLimit; index++) {
+    if (seen.has(bytesToHex(outgoingEphemeralKeyPair({ outgoingNode, sendIndex: index }).pubKey))) {
+      highestUsed = index;
+      misses = 0;
+    } else {
+      misses++;
+    }
+  }
+  return highestUsed + 1;
+}
+
+/**
+ * What makes a deposit address reconstructable.
+ *
+ * The ephemeral key is NOT random. A deposit address commits to it via the
+ * tapleaf, and the key path is a NUMS point, so an address whose ephemeral key
+ * is lost is an address nobody — not the owner, not the pool — can ever spend.
+ * Indexing it off the viewing node makes that node a complete backup: walk
+ * `depositIndex` upward and every address comes back.
+ */
+export interface DepositRecoveryMaterial {
+  /** From `depositViewingNode(viewingPrivKey)`. */
+  viewingNode: Uint8Array;
+  /** Monotonic per-owner counter. One address per index. */
+  depositIndex: number;
+}
+
+/** `sha256(domain || viewingNode || depositIndex)` → Ed25519 ephemeral keypair. */
+export function depositEphemeralKeyPair(recovery: DepositRecoveryMaterial): {
+  privKey: Uint8Array;
+  pubKey: Uint8Array;
+} {
+  const { viewingNode, depositIndex } = recovery;
+  if (viewingNode.length === 0) {
+    throw new Error("deposit viewingNode must not be empty");
+  }
+  if (!Number.isInteger(depositIndex) || depositIndex < 0) {
+    throw new Error(`invalid depositIndex: ${depositIndex}`);
+  }
+
+  const material = new Uint8Array(DEPOSIT_EPHEMERAL_DOMAIN.length + viewingNode.length + 4);
+  material.set(DEPOSIT_EPHEMERAL_DOMAIN, 0);
+  material.set(viewingNode, DEPOSIT_EPHEMERAL_DOMAIN.length);
+  new DataView(material.buffer).setUint32(
+    DEPOSIT_EPHEMERAL_DOMAIN.length + viewingNode.length,
+    depositIndex,
+    true,
+  );
+  return ed25519KeyPairFromMaterial(material);
+}
+
 /** A deposit whose address alone binds the note keys — no OP_RETURN. */
 export interface TweakDepositResult {
   /** Taproot address to send BTC to */
@@ -524,8 +698,14 @@ export interface TweakDepositResult {
   npk: Uint8Array;
   /** 32-byte Ed25519 ephemeral public key */
   ephemeralPub: Uint8Array;
-  /** sha256(npk || ephemeralPub) — the commitment the address is tweaked by */
+  /** sha256(npk || ephemeralPub) — the commitment carried in the tapleaf */
   tweakCommitment: Uint8Array;
+  /** The tapleaf: `<commitment> OP_DROP <ika_xonly> OP_CHECKSIG` */
+  leafScript: Uint8Array;
+  /** Its BIP-341 tapleaf hash, which is also the merkle root (single leaf) */
+  leafHash: Uint8Array;
+  /** Script-path witness is `[signature, leafScript, controlBlock]` */
+  controlBlock: Uint8Array;
 }
 
 /**
@@ -534,17 +714,27 @@ export interface TweakDepositResult {
  * The transaction carries nothing but a payment, so anything that can send to a
  * P2TR address can fund it — a hardware wallet, an exchange withdrawal, a faucet.
  * The note keys are recovered from instruction data at completion time and proven
- * against this address's Taproot tweak, so substituting either key derives a
- * different address that the funding transaction never paid.
+ * against this address's tapleaf, so substituting either key derives a different
+ * leaf, and so a different address that the funding transaction never paid.
  *
- * Sweep mode: the pool sweeps this address into its own custody, and that sweep
- * is what gets SPV-verified. Register the address with the tracker BEFORE any
- * coins are sent — a deposit with no OP_RETURN is invisible to block scanning,
- * so an unregistered address is one nobody is watching.
+ * The address is spendable only by `vaultXOnlyPubkey` via the script path; its
+ * key path is a NUMS point. That keeps the deposit under Ika custody from the
+ * moment it confirms, and it is also the only shape Ika can sign for — its MPC
+ * cannot produce a signature for a tweaked key.
+ *
+ * `recovery` is not optional on purpose. The address commits to the ephemeral
+ * key and the key path is unspendable, so a random ephemeral key that is later
+ * lost burns the coins outright. Indexing it off the viewing node means that
+ * node is the backup — and it can be delegated without granting spend authority.
+ *
+ * Register the address with the tracker BEFORE any coins are sent — a deposit
+ * with no OP_RETURN is invisible to block scanning, so an unregistered address
+ * is one nobody is watching.
  */
 export async function createTweakDeposit(
   recipientMeta: StealthMetaAddress,
   vaultXOnlyPubkey: Uint8Array,
+  recovery: DepositRecoveryMaterial,
   network: "mainnet" | "testnet" | "regtest" = "testnet",
 ): Promise<TweakDepositResult> {
   if (vaultXOnlyPubkey.length !== 32) {
@@ -552,19 +742,19 @@ export async function createTweakDeposit(
   }
 
   const viewingPubKey = new Uint8Array(recipientMeta.viewingPubKey);
-  const ephemeral = ed25519GenerateKeyPair();
+  const ephemeral = depositEphemeralKeyPair(recovery);
   const sharedSecret = x25519Ecdh(ephemeral.privKey, viewingPubKey);
   const stealthScalar = deriveStealthScalar(sharedSecret);
   const recipientMPK = bytesToBigint(recipientMeta.mpk);
   const npk = bigintToBytes(computeNPKSync(recipientMPK, stealthScalar));
   const ephemeralPub = new Uint8Array(ephemeral.pubKey);
 
-  const { depositTweakCommitment, deriveTaprootAddress } = await import("./taproot");
+  const { depositTweakCommitment, deriveDepositAddress } = await import("./taproot");
   const tweakCommitment = depositTweakCommitment(npk, ephemeralPub);
-  const { address, outputKey } = deriveTaprootAddress(
+  const { address, outputKey, leafScript, leafHash, controlBlock } = deriveDepositAddress(
     tweakCommitment,
-    network,
     vaultXOnlyPubkey,
+    network,
   );
 
   return {
@@ -573,6 +763,9 @@ export async function createTweakDeposit(
     npk,
     ephemeralPub,
     tweakCommitment,
+    leafScript,
+    leafHash,
+    controlBlock,
   };
 }
 

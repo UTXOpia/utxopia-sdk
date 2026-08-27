@@ -12,7 +12,7 @@
 
 import * as btc from "@scure/btc-signer";
 import { hex } from "@scure/base";
-import { DEPOSIT_OP_RETURN_SIZE, createOpReturnScriptFromPayload } from "./taproot";
+import { DEPOSIT_OP_RETURN_SIZE, createOpReturnScriptFromPayload, bech32Hrp } from "./taproot";
 
 // =============================================================================
 // Types
@@ -41,13 +41,20 @@ export interface BuildDepositPsbtParams {
   /** Deposit amount in satoshis */
   depositAmountSats: number;
   /** Compact deposit OP_RETURN payload (from buildDepositOpReturn) */
-  opReturnPayload: Uint8Array;
+  /**
+   * 73-byte deposit metadata, for the OP_RETURN flow.
+   *
+   * Omit it for an OP_RETURN-free deposit (`verify_deposit`), where the address
+   * itself binds the note keys through its tapleaf. The transaction is then a
+   * plain payment, which is what lets an exchange withdrawal fund it.
+   */
+  opReturnPayload?: Uint8Array;
   /** Change address (same type as sender) */
   changeAddress: string;
   /** Fee rate in sats/vbyte */
   feeRate: number;
   /** Bitcoin network */
-  network?: "mainnet" | "testnet" | "signet";
+  network?: "mainnet" | "testnet" | "signet" | "regtest";
 }
 
 /** Result of PSBT construction */
@@ -98,15 +105,17 @@ export function estimateDepositFee(
   feeRate: number,
   inputType: "p2tr" | "p2wpkh" = "p2tr",
   hasChange: boolean = true,
+  /** An OP_RETURN-free deposit has one output fewer; defaults true for callers
+   *  written before that flow existed. */
+  hasOpReturn: boolean = true,
 ): number {
   const inputVbytes = inputType === "p2tr" ? P2TR_INPUT_VBYTES : P2WPKH_INPUT_VBYTES;
-  const outputCount = hasChange ? 3 : 2; // deposit + OP_RETURN + optional change
 
   const vsize =
     TX_OVERHEAD_VBYTES +
     numInputs * inputVbytes +
     P2TR_OUTPUT_VBYTES + // deposit output
-    OP_RETURN_OUTPUT_VBYTES + // OP_RETURN output
+    (hasOpReturn ? OP_RETURN_OUTPUT_VBYTES : 0) +
     (hasChange ? P2TR_OUTPUT_VBYTES : 0); // change output
 
   return Math.ceil(vsize * feeRate);
@@ -138,11 +147,16 @@ export function buildDepositPsbt(params: BuildDepositPsbtParams): BuildDepositPs
   if (depositAmountSats < DUST_LIMIT) {
     throw new Error(`Deposit amount ${depositAmountSats} is below dust limit ${DUST_LIMIT}`);
   }
-  if (opReturnPayload.length !== DEPOSIT_OP_RETURN_SIZE) {
+  if (opReturnPayload && opReturnPayload.length !== DEPOSIT_OP_RETURN_SIZE) {
     throw new Error(`OP_RETURN payload must be ${DEPOSIT_OP_RETURN_SIZE} bytes, got ${opReturnPayload.length}`);
   }
 
-  const btcNetwork = network === "mainnet" ? btc.NETWORK : btc.TEST_NETWORK;
+  // Regtest shares testnet's version bytes but not its bech32 hrp, so folding it
+  // into TEST_NETWORK leaves every bcrt1 address undecodable.
+  const btcNetwork =
+    network === "mainnet"
+      ? btc.NETWORK
+      : { ...btc.TEST_NETWORK, bech32: bech32Hrp(network) };
 
   // Calculate total input value
   const totalInput = senderUtxos.reduce((sum, u) => sum + u.value, 0);
@@ -152,11 +166,11 @@ export function buildDepositPsbt(params: BuildDepositPsbtParams): BuildDepositPs
   const inputType = firstScript[0] === 0x51 ? "p2tr" : "p2wpkh";
 
   // Estimate fee with change
-  const feeWithChange = estimateDepositFee(senderUtxos.length, feeRate, inputType, true);
+  const feeWithChange = estimateDepositFee(senderUtxos.length, feeRate, inputType, true, Boolean(opReturnPayload));
   const changeAmount = totalInput - depositAmountSats - feeWithChange;
 
   // Check if we have enough funds
-  const feeWithoutChange = estimateDepositFee(senderUtxos.length, feeRate, inputType, false);
+  const feeWithoutChange = estimateDepositFee(senderUtxos.length, feeRate, inputType, false, Boolean(opReturnPayload));
   if (totalInput < depositAmountSats + feeWithoutChange) {
     throw new Error(
       `Insufficient funds: have ${totalInput} sats, need ${depositAmountSats + feeWithoutChange} sats (including fee)`,
@@ -203,12 +217,15 @@ export function buildDepositPsbt(params: BuildDepositPsbtParams): BuildDepositPs
   // Output 1: P2TR deposit
   tx.addOutputAddress(depositAddress, BigInt(depositAmountSats), btcNetwork);
 
-  // Output 2: OP_RETURN with compact deposit payload.
-  const opReturnScript = createOpReturnScriptFromPayload(opReturnPayload);
-  tx.addOutput({
-    script: opReturnScript,
-    amount: 0n,
-  });
+  // Output 2: OP_RETURN with compact deposit payload — only for that flow. A
+  // tweak-bound deposit adds nothing here, so the transaction is indistinguishable
+  // from an ordinary payment.
+  if (opReturnPayload) {
+    tx.addOutput({
+      script: createOpReturnScriptFromPayload(opReturnPayload),
+      amount: 0n,
+    });
+  }
 
   // Output 3: Change (if above dust)
   if (hasChange) {

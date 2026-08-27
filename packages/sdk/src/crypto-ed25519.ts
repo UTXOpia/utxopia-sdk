@@ -32,6 +32,24 @@ export function ed25519GenerateKeyPair(): { privKey: Uint8Array; pubKey: Uint8Ar
 }
 
 /**
+ * Derive an Ed25519 keypair deterministically from secret material.
+ *
+ * Used for deposit ephemeral keys, where a random keypair is a liability: the
+ * deposit address commits to the ephemeral pubkey, so losing it makes the coins
+ * unspendable by anyone, forever. Deriving it from the owner's seed means the
+ * seed alone can rebuild every address they were ever handed.
+ *
+ * @param material - secret bytes; hashed, so it need not be uniform
+ */
+export function ed25519KeyPairFromMaterial(material: Uint8Array): {
+  privKey: Uint8Array;
+  pubKey: Uint8Array;
+} {
+  const privKey = sha256(material);
+  return { privKey, pubKey: ed25519.getPublicKey(privKey) };
+}
+
+/**
  * Derive an Ed25519 public key from a private key
  *
  * @param privKey - 32-byte Ed25519 private key
