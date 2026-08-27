@@ -401,21 +401,21 @@ export interface NonInteractiveDepositWithRefundResult extends NonInteractiveDep
 export async function createNonInteractiveDeposit(
   recipientMeta: StealthMetaAddress,
   custodyInternalKey: Uint8Array,
-  network?: "mainnet" | "testnet" | "regtest",
+  network?: BitcoinNetwork,
   userRefundPubkey?: undefined,
   opReturnContext?: DepositOpReturnContext,
 ): Promise<NonInteractiveDepositResult>;
 export async function createNonInteractiveDeposit(
   recipientMeta: StealthMetaAddress,
   custodyInternalKey: Uint8Array,
-  network: "mainnet" | "testnet" | "regtest",
+  network: BitcoinNetwork,
   userRefundPubkey: Uint8Array,
   opReturnContext: DepositOpReturnContext,
 ): Promise<NonInteractiveDepositWithRefundResult>;
 export async function createNonInteractiveDeposit(
   recipientMeta: StealthMetaAddress,
   custodyInternalKey: Uint8Array,
-  network: "mainnet" | "testnet" | "regtest" = "testnet",
+  network: BitcoinNetwork = "testnet",
   userRefundPubkey?: Uint8Array,
   opReturnContext?: DepositOpReturnContext,
 ): Promise<NonInteractiveDepositResult | NonInteractiveDepositWithRefundResult> {
@@ -491,7 +491,7 @@ export async function createNonInteractiveDeposit(
 export async function createDirectVaultDeposit(
   recipientMeta: StealthMetaAddress,
   vaultXOnlyPubkey: Uint8Array,
-  network: "mainnet" | "testnet" | "regtest" = "testnet",
+  network: BitcoinNetwork = "testnet",
   opReturnContext?: DepositOpReturnContext,
 ): Promise<NonInteractiveDepositResult> {
   if (!opReturnContext) {
@@ -735,7 +735,7 @@ export async function createTweakDeposit(
   recipientMeta: StealthMetaAddress,
   vaultXOnlyPubkey: Uint8Array,
   recovery: DepositRecoveryMaterial,
-  network: "mainnet" | "testnet" | "regtest" = "testnet",
+  network: BitcoinNetwork = "testnet",
 ): Promise<TweakDepositResult> {
   if (vaultXOnlyPubkey.length !== 32) {
     throw new Error("vaultXOnlyPubkey must be 32 bytes");
@@ -781,7 +781,7 @@ export async function createTweakDeposit(
  */
 export async function createDepositFromConfig(
   recipientMeta: StealthMetaAddress,
-  network: "mainnet" | "testnet" | "regtest" = "testnet",
+  network: BitcoinNetwork = "testnet",
   opReturnContext?: DepositOpReturnContext,
 ): Promise<NonInteractiveDepositResult> {
   const config = getConfig();
@@ -1220,6 +1220,7 @@ export async function scanUnifiedNotes(
 // ========== Connection Adapter ==========
 
 import type { Address } from "@solana/kit";
+import type { BitcoinNetwork } from "./taproot";
 
 export interface ConnectionAdapter {
   getAccountInfo: (
@@ -1283,23 +1284,6 @@ export function packStealthOutputForCircuit(output: StealthOutputData): CircuitS
     ephemeralPubX,
     encryptedAmountWithSign,
   };
-}
-
-/**
- * Unpack encrypted amount from packed Field element
- */
-export function unpackEncryptedAmountWithSign(packed: bigint): { encryptedAmount: Uint8Array; ySign: boolean } {
-  const ySign = (packed & (1n << 64n)) !== 0n;
-  const amount = packed & ((1n << 64n) - 1n);
-
-  const encryptedAmount = new Uint8Array(8);
-  let temp = amount;
-  for (let i = 0; i < 8; i++) {
-    encryptedAmount[i] = Number(temp & 0xffn);
-    temp >>= 8n;
-  }
-
-  return { encryptedAmount, ySign };
 }
 
 /**

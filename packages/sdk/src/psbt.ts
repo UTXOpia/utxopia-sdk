@@ -12,7 +12,7 @@
 
 import * as btc from "@scure/btc-signer";
 import { hex } from "@scure/base";
-import { DEPOSIT_OP_RETURN_SIZE, createOpReturnScriptFromPayload, bech32Hrp } from "./taproot";
+import { DEPOSIT_OP_RETURN_SIZE, createOpReturnScriptFromPayload, bech32Hrp, type BitcoinNetwork } from "./taproot";
 
 // =============================================================================
 // Types
@@ -54,7 +54,7 @@ export interface BuildDepositPsbtParams {
   /** Fee rate in sats/vbyte */
   feeRate: number;
   /** Bitcoin network */
-  network?: "mainnet" | "testnet" | "signet" | "regtest";
+  network?: BitcoinNetwork;
 }
 
 /** Result of PSBT construction */

@@ -8,7 +8,7 @@
 
 import { sha256 } from "@noble/hashes/sha2.js";
 import { taggedHash, hexToBytes, bytesToHex } from "./crypto";
-import * as bech32 from "bech32";
+import { bech32, bech32m } from "@scure/base";
 import { secp256k1 } from "@noble/curves/secp256k1.js";
 
 // Never use the secp256k1 generator as a custody key. Its discrete log is
@@ -31,7 +31,7 @@ const UNSAFE_GENERATOR_INTERNAL_KEY_HEX =
  */
 export function deriveTaprootAddress(
   commitment: Uint8Array,
-  network: "mainnet" | "testnet" | "regtest" = "testnet",
+  network: BitcoinNetwork = "testnet",
   internalKey?: Uint8Array
 ): {
   address: string;
@@ -160,7 +160,7 @@ export function depositLeafScript(
 export function deriveDepositAddress(
   commitment: Uint8Array,
   ikaXOnlyPubkey: Uint8Array,
-  network: "mainnet" | "testnet" | "regtest" = "testnet"
+  network: BitcoinNetwork = "testnet"
 ): {
   address: string;
   outputKey: Uint8Array;
@@ -199,14 +199,14 @@ export function verifyTaprootAddress(
   internalKey?: Uint8Array
 ): boolean {
   try {
-    const decoded = bech32.bech32m.decode(address);
+    const decoded = bech32m.decode(address as `${string}1${string}`);
     const witnessVersion = decoded.words[0];
     if (witnessVersion !== 1) {
       return false;
     }
 
     const actualOutputKey = new Uint8Array(
-      bech32.bech32m.fromWords(decoded.words.slice(1))
+      bech32m.fromWords(decoded.words.slice(1))
     );
 
     const network = decoded.prefix === "bc" ? "mainnet" : "testnet";
@@ -219,13 +219,22 @@ export function verifyTaprootAddress(
 }
 
 /**
+ * The networks whose addresses this SDK derives.
+ *
+ * Kept as one alias because the members drifted when it was spelled out at each
+ * call site: psbt.ts folded regtest into testnet while taproot.ts did not, and
+ * the two disagreed about what a bcrt1 address was.
+ */
+export type BitcoinNetwork = "mainnet" | "testnet" | "signet" | "regtest";
+
+/**
  * bech32 human-readable prefix for a Bitcoin network.
  *
  * Regtest is the reason this exists: it shares testnet's version bytes but not
  * its prefix, and every place that folded the two together produced addresses
  * no regtest node would accept.
  */
-export function bech32Hrp(network: "mainnet" | "testnet" | "signet" | "regtest"): string {
+export function bech32Hrp(network: BitcoinNetwork): string {
   return network === "mainnet" ? "bc" : network === "regtest" ? "bcrt" : "tb";
 }
 
@@ -234,9 +243,9 @@ export function bech32Hrp(network: "mainnet" | "testnet" | "signet" | "regtest")
  */
 export function p2trAddress(
   outputKey: Uint8Array,
-  network: "mainnet" | "testnet" | "signet" | "regtest",
+  network: BitcoinNetwork,
 ): string {
-  return bech32.bech32m.encode(bech32Hrp(network), [1, ...bech32.bech32m.toWords(outputKey)]);
+  return bech32m.encode(bech32Hrp(network), [1, ...bech32m.toWords(outputKey)]);
 }
 
 /**
@@ -286,7 +295,7 @@ export function isValidBitcoinAddress(address: string): {
   try {
     // Bech32m (Taproot)
     if (address.startsWith("bc1p") || address.startsWith("tb1p")) {
-      const decoded = bech32.bech32m.decode(address);
+      const decoded = bech32m.decode(address as `${string}1${string}`);
       if (decoded.words[0] === 1 && decoded.words.length === 53) {
         return {
           valid: true,
@@ -302,7 +311,7 @@ export function isValidBitcoinAddress(address: string): {
       address.startsWith("tb1q") ||
       address.startsWith("bcrt1q")
     ) {
-      const decoded = bech32.bech32.decode(address);
+      const decoded = bech32.decode(address as `${string}1${string}`);
       if (decoded.words[0] === 0) {
         const type = decoded.words.length === 33 ? "p2wpkh" : "p2wsh";
         return {
@@ -640,7 +649,7 @@ export function deriveTaprootAddressWithRefund(
   npk: Uint8Array,
   userRefundPubkey: Uint8Array,
   internalKey: Uint8Array,
-  network: "mainnet" | "testnet" | "regtest" = "testnet"
+  network: BitcoinNetwork = "testnet"
 ): {
   address: string;
   outputKey: Uint8Array;

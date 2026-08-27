@@ -9,11 +9,3 @@
 
 // Re-export everything from the web prover (default for browser/Node.js)
 export * from "./web";
-
-// Re-export types
-export type {
-  MerkleProofInput,
-  ProofData,
-  CircuitType,
-  JoinSplitProofInputs,
-} from "./web";

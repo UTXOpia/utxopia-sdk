@@ -15,7 +15,7 @@ import {
   computeJoinSplitCommitmentSync,
   computeJoinSplitNullifierSync,
 } from "../poseidon";
-import { BN254_FIELD_PRIME } from "../crypto";
+import { BN254_FIELD_PRIME, bytesToHex } from "../crypto";
 import { TREE_DEPTH } from "../merkle";
 import { getConfig } from "../config";
 import { MAX_SAFE_JOINSPLIT_SIZE } from "../vk-registry";
@@ -60,13 +60,6 @@ export interface ProofData {
 
 export type CircuitType = `joinsplit_${number}x${number}`;
 
-/** Names of non-JoinSplit auxiliary circuits (selective disclosure). */
-export type AuxCircuitName =
-  | "ownership"
-  | "range_sum"
-  | "range_sum_4"
-  | "range_sum_16";
-
 // Environment detection
 const isBrowser = typeof window !== "undefined";
 const isNode = typeof process !== "undefined" && process.versions?.node;
@@ -83,13 +76,6 @@ export function setCircuitPath(path: string): void {
   circuitCache.clear();
   artifactBytesCache.clear();
   artifactDownloadCache.clear();
-}
-
-/**
- * Get the current circuit base path
- */
-export function getCircuitPath(): string {
-  return circuitBasePath;
 }
 
 // Lazy-loaded snarkjs module
@@ -164,9 +150,6 @@ export function setCircuitArtifactDigests(digests: Record<string, string> | null
   artifactBytesCache.clear();
 }
 
-const toHex = (buf: ArrayBuffer) =>
-  Array.from(new Uint8Array(buf), (b) => b.toString(16).padStart(2, "0")).join("");
-
 async function verifyArtifactBytes(url: string, bytes: Uint8Array): Promise<void> {
   if (!artifactDigests) return;
   // Key by path-under-base so one manifest works across origins (local dev vs CDN).
@@ -177,8 +160,8 @@ async function verifyArtifactBytes(url: string, bytes: Uint8Array): Promise<void
         `Regenerate the artifact manifest so it covers every shape this origin serves.`,
     );
   }
-  const actual = toHex(
-    await crypto.subtle.digest("SHA-256", bytes.buffer.slice(bytes.byteOffset, bytes.byteOffset + bytes.byteLength) as ArrayBuffer),
+  const actual = bytesToHex(
+    new Uint8Array(await crypto.subtle.digest("SHA-256", bytes.buffer.slice(bytes.byteOffset, bytes.byteOffset + bytes.byteLength) as ArrayBuffer)),
   );
   if (actual !== artifactDigests[key]) {
     throw new Error(
@@ -717,55 +700,3 @@ export async function cleanup(): Promise<void> {
 // ==========================================================================
 // Solana Instruction Building (for Groth16 on-chain verification)
 // ==========================================================================
-
-/**
- * Groth16 verifier program ID (from current config)
- */
-export function getGroth16VerifierProgramId(): Address {
-  const config = getConfig();
-  return config.groth16VerifierProgramId;
-}
-
-/**
- * Build instruction data for Groth16 verification
- */
-export function buildVerifyInstructionData(
-  proof: Uint8Array,
-  publicSignals: string[],
-  vkHash: string
-): Uint8Array {
-  const piBytes = publicSignals.flatMap((pi) => {
-    const bytes = new Array(32).fill(0);
-    const bigint = BigInt(pi);
-    for (let i = 31; i >= 0; i--) {
-      bytes[i] = Number((bigint >> BigInt((31 - i) * 8)) & 0xFFn);
-    }
-    return bytes;
-  });
-
-  const cleanHex = vkHash.startsWith("0x") ? vkHash.slice(2) : vkHash;
-  const vkHashBytes = new Uint8Array(cleanHex.length / 2);
-  for (let i = 0; i < vkHashBytes.length; i++) {
-    vkHashBytes[i] = parseInt(cleanHex.substr(i * 2, 2), 16);
-  }
-
-  const totalSize = proof.length + 4 + piBytes.length + 32;
-  const data = new Uint8Array(totalSize);
-  let offset = 0;
-
-  data.set(proof, offset);
-  offset += proof.length;
-
-  const piCount = publicSignals.length;
-  data[offset++] = piCount & 0xff;
-  data[offset++] = (piCount >> 8) & 0xff;
-  data[offset++] = (piCount >> 16) & 0xff;
-  data[offset++] = (piCount >> 24) & 0xff;
-
-  data.set(new Uint8Array(piBytes), offset);
-  offset += piBytes.length;
-
-  data.set(vkHashBytes, offset);
-
-  return data;
-}

@@ -14,6 +14,7 @@
  */
 
 import { sha256 } from "@noble/hashes/sha2.js";
+import { bytesToHex as nobleBytesToHex, hexToBytes as nobleHexToBytes } from "@noble/hashes/utils.js";
 
 // =============================================================================
 // Field Constants
@@ -110,22 +111,15 @@ export function bytesToBigint(bytes: Uint8Array): bigint {
  * Convert hex string to Uint8Array
  */
 export function hexToBytes(hex: string): Uint8Array {
-  const cleanHex = hex.startsWith("0x") ? hex.slice(2) : hex;
-  const bytes = new Uint8Array(cleanHex.length / 2);
-  for (let i = 0; i < cleanHex.length; i += 2) {
-    bytes[i / 2] = parseInt(cleanHex.substr(i, 2), 16);
-  }
-  return bytes;
+  // The 0x prefix is ours; noble rejects it. Everything after is noble's, which
+  // also means malformed hex now throws instead of decoding to zero bytes.
+  return nobleHexToBytes(hex.startsWith("0x") ? hex.slice(2) : hex);
 }
 
 /**
  * Convert Uint8Array to hex string
  */
-export function bytesToHex(bytes: Uint8Array): string {
-  return Array.from(bytes)
-    .map((b) => b.toString(16).padStart(2, "0"))
-    .join("");
-}
+export const bytesToHex = nobleBytesToHex;
 
 // =============================================================================
 // Hashing Utilities
@@ -183,17 +177,4 @@ export function scalarFromBytes(bytes: Uint8Array): bigint {
     result = (result << 8n) | BigInt(bytes[i]);
   }
   return mod(result, BABYJUB_ORDER);
-}
-
-/**
- * Convert a bigint scalar to 32 bytes (big-endian)
- */
-export function scalarToBytes(scalar: bigint): Uint8Array {
-  const bytes = new Uint8Array(32);
-  let temp = mod(scalar, BABYJUB_ORDER);
-  for (let i = 31; i >= 0; i--) {
-    bytes[i] = Number(temp & 0xffn);
-    temp = temp >> 8n;
-  }
-  return bytes;
 }

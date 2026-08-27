@@ -164,12 +164,3 @@ export function computeTokenId(mintBytes: Uint8Array): bigint {
   const reduced = reduceToField(mintBytes);
   return poseidonHashSync([reduced, 0n]);
 }
-
-/**
- * Convenience: compute token_id from a Solana address string
- */
-export function computeTokenIdFromAddress(mintAddress: string): bigint {
-  // Base58 decode — import from @solana/kit if available, otherwise use raw bytes
-  // For now, caller should pass raw bytes via computeTokenId
-  throw new Error("Use computeTokenId(mintBytes) with raw pubkey bytes");
-}

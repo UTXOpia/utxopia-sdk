@@ -56,7 +56,7 @@ import {
 import { selectUtxos, type UtxoDescriptor } from "./psbt";
 import { hexToBytes, bytesToHex, bigintToBytes } from "./crypto";
 import { EventClient } from "./event-client";
-import { type DepositOpReturnContext } from "./taproot";
+import { type DepositOpReturnContext, type BitcoinNetwork } from "./taproot";
 
 // ─── Types ──────────────────────────────────────────────────────────
 
@@ -425,7 +425,7 @@ export class UTXOpiaClient {
     depositIndex: number;
     ikaXOnlyPubkey: Uint8Array;
     recipient?: StealthMetaAddress;
-    network?: "mainnet" | "testnet" | "regtest";
+    network?: BitcoinNetwork;
   }): Promise<TweakDepositResult> {
     if (!this._keys) {
       throw new Error("No keys (login first)");
@@ -457,7 +457,7 @@ export class UTXOpiaClient {
    */
   async prepareDeposit(opts: {
     recipient?: StealthMetaAddress;
-    network?: "mainnet" | "testnet" | "regtest";
+    network?: BitcoinNetwork;
     opReturnContext: DepositOpReturnContext;
   }): Promise<NonInteractiveDepositResult> {
     const meta = opts.recipient ?? this._stealthAddress;
@@ -631,7 +631,7 @@ export class UTXOpiaClient {
   }
 }
 
-function sdkBitcoinNetworkToAddressNetwork(network: NetworkConfig["bitcoinNetwork"]): "mainnet" | "testnet" | "regtest" {
+function sdkBitcoinNetworkToAddressNetwork(network: NetworkConfig["bitcoinNetwork"]): BitcoinNetwork {
   if (network === "mainnet") return "mainnet";
   if (network === "regtest") return "regtest";
   return "testnet";

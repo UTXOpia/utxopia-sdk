@@ -27,40 +27,10 @@
       "import": "./dist/prover/mobile.js",
       "default": "./dist/prover/mobile.js"
     },
-    "./stealth": {
-      "types": "./dist/stealth/index.d.ts",
-      "import": "./dist/stealth/index.js",
-      "default": "./dist/stealth/index.js"
-    },
     "./bitcoin": {
       "types": "./dist/bitcoin/index.d.ts",
       "import": "./dist/bitcoin/index.js",
       "default": "./dist/bitcoin/index.js"
-    },
-    "./solana": {
-      "types": "./dist/solana/index.d.ts",
-      "import": "./dist/solana/index.js",
-      "default": "./dist/solana/index.js"
-    },
-    "./watcher": {
-      "types": "./dist/watcher/index.d.ts",
-      "import": "./dist/watcher/index.js",
-      "default": "./dist/watcher/index.js"
-    },
-    "./watcher/web": {
-      "types": "./dist/watcher/web.d.ts",
-      "import": "./dist/watcher/web.js",
-      "default": "./dist/watcher/web.js"
-    },
-    "./watcher/native": {
-      "types": "./dist/watcher/native.d.ts",
-      "import": "./dist/watcher/native.js",
-      "default": "./dist/watcher/native.js"
-    },
-    "./react": {
-      "types": "./dist/react/index.d.ts",
-      "import": "./dist/react/index.js",
-      "default": "./dist/react/index.js"
     }
   },
   "files": [
@@ -93,7 +63,6 @@
     "@scure/btc-signer": "2.0.1",
     "@solana-program/system": "^0.10.0",
     "@solana/kit": "^5.5.0",
-    "bech32": "^2.0.0",
     "circomlibjs": "^0.1.7",
     "poseidon-lite": "0.3.0"
   },

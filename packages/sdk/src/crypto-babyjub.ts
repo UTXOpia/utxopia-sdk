@@ -36,11 +36,6 @@ export const BABYJUB_ORDER =
   2736030358979909402780800718157159386076813972158567259200215660948447373041n;
 
 /**
- * Baby Jubjub cofactor
- */
-export const BABYJUB_COFACTOR = 8n;
-
-/**
  * Generator point (BASE8) - matches circomlib's BabyPbk() generator
  * This is the base point of the prime-order subgroup (cofactor-cleared).
  */

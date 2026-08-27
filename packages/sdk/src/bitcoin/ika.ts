@@ -8,7 +8,7 @@
  */
 
 import { taggedHash, hexToBytes, bytesToHex } from "../crypto";
-import { p2trAddress } from "../taproot";
+import { p2trAddress, type BitcoinNetwork } from "../taproot";
 import { secp256k1 } from "@noble/curves/secp256k1.js";
 
 /**
@@ -33,12 +33,12 @@ export type IkaDWalletRef =
  *   address = bech32m(hrp, [witness_version=1, ...words(output_key)])
  *
  * @param ref       The Ika dWallet reference (literal pubkey, or future async id).
- * @param network   "mainnet" | "testnet" | "regtest"
+ * @param network   BitcoinNetwork
  * @returns         The P2TR address (`bc1p…` / `tb1p…` / `bcrt1p…`)
  */
 export function deriveCustodyAddressFromIkaDWallet(
   ref: IkaDWalletRef,
-  network: "mainnet" | "testnet" | "regtest"
+  network: BitcoinNetwork
 ): string {
   const xonly = extractXOnly(ref);
   const tweak = taggedHash("TapTweak", xonly);
@@ -64,7 +64,7 @@ export function deriveCustodyAddressFromIkaDWallet(
  */
 export function deriveRawXOnlyP2TRAddress(
   xonlyPubkey: Uint8Array,
-  network: "mainnet" | "testnet" | "regtest"
+  network: BitcoinNetwork
 ): string {
   if (xonlyPubkey.length !== 32) {
     throw new Error("xonlyPubkey must be 32 bytes");

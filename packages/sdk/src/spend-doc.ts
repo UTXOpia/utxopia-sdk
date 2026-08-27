@@ -18,6 +18,7 @@ import {
   createUnshieldBoundParams,
   type SolanaPrivacyDomainContext,
 } from "./bound-params";
+import { bytesToHex as hex } from "./crypto";
 
 export interface SpendDoc {
   mode: "transfer" | "unshield" | "redeem";
@@ -63,8 +64,6 @@ function fmt(raw: bigint, decimals: number): string {
   const frac = decimals === 0 ? "" : s.slice(s.length - decimals).replace(/0+$/, "");
   return `${neg ? "-" : ""}${whole}${frac ? `.${frac}` : ""}`;
 }
-
-const hex = (b: Uint8Array) => Array.from(b, (x) => x.toString(16).padStart(2, "0")).join("");
 
 function sortedValues(v: bigint[]): string {
   return [...v].sort((a, b) => (a < b ? -1 : a > b ? 1 : 0)).join(",");
