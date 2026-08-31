@@ -88,13 +88,11 @@ describe("MagicBlock execution domains", () => {
     expect(delegate[1]).toBe(2);
     expect(new DataView(delegate.buffer).getUint32(2, true)).toBe(500);
 
-    const anyValidator = buildMagicBlockDelegateInstructionData({
-      target: "policyApproval",
-      commitFrequencyMs: 1000,
-    });
-    expect(anyValidator.length).toBe(6);
-    expect(anyValidator[0]).toBe(32);
-    expect(anyValidator[1]).toBe(2);
+    // The validator is pinned, never omitted: an unpinned delegation would run the
+    // PolicyApproval outside the TEE and the program rejects it (ValidatorNotPinned).
+    const pinned = delegate.slice(6);
+    expect(pinned.length).toBe(32);
+    expect(pinned.every((b) => b === 0)).toBe(false);
 
     const commit = buildMagicBlockCommitInstructionData({
       nullifierHashes: [new Uint8Array(32).fill(7)],
@@ -198,6 +196,7 @@ describe("MagicBlock execution domains", () => {
     const delegate = buildMagicBlockDelegateInstruction({
       target: "policyApproval",
       commitFrequencyMs: 500,
+      validator: getMagicBlockValidatorIdentity("tee"),
       accounts: {
         payer,
         authority: payer,

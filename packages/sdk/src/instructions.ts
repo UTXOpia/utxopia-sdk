@@ -1380,7 +1380,8 @@ export interface MagicBlockDelegateInstructionOptions {
   };
   target: MagicBlockDelegateTarget;
   commitFrequencyMs: number;
-  validator?: Address;
+  /** Required: the PER's TEE validator. An unpinned delegation is rejected on-chain. */
+  validator: Address;
 }
 
 export interface MagicBlockCommitInstructionOptions {
@@ -1431,7 +1432,7 @@ function magicBlockDelegateTargetByte(target: MagicBlockDelegateTarget): number 
 export function buildMagicBlockDelegateInstructionData(options: {
   target: MagicBlockDelegateTarget;
   commitFrequencyMs: number;
-  validator?: Address;
+  validator: Address;
 }): Uint8Array {
   if (!Number.isInteger(options.commitFrequencyMs) || options.commitFrequencyMs < 0) {
     throw new Error("commitFrequencyMs must be a non-negative u32");
@@ -1440,14 +1441,12 @@ export function buildMagicBlockDelegateInstructionData(options: {
     throw new Error("commitFrequencyMs must fit in u32");
   }
 
-  const data = new Uint8Array(options.validator ? 38 : 6);
+  const data = new Uint8Array(38);
   const view = new DataView(data.buffer);
   data[0] = INSTRUCTION.MAGICBLOCK_DELEGATE;
   data[1] = magicBlockDelegateTargetByte(options.target);
   view.setUint32(2, options.commitFrequencyMs, true);
-  if (options.validator) {
-    data.set(addressToBytes(options.validator), 6);
-  }
+  data.set(addressToBytes(options.validator), 6);
   return data;
 }
 
