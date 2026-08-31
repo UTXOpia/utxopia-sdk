@@ -55,6 +55,7 @@ import {
 } from "./stealth";
 import { selectUtxos, type UtxoDescriptor } from "./psbt";
 import { hexToBytes, bytesToHex, bigintToBytes } from "./crypto";
+import { getAddressEncoder, type Address } from "@solana/kit";
 import { EventClient } from "./event-client";
 import { type DepositOpReturnContext, type BitcoinNetwork } from "./taproot";
 
@@ -269,23 +270,18 @@ export class UTXOpiaClient {
     const cached = this._tokenIdCache.get(mintAddress);
     if (cached !== undefined) return cached;
 
-    // If it's a base58 address, convert via PublicKey
-    let bytes: Uint8Array;
-    try {
-      // Try as raw hex first (64 chars)
-      if (mintAddress.length === 64 && /^[0-9a-fA-F]+$/.test(mintAddress)) {
-        bytes = hexToBytes(mintAddress);
-      } else {
-        // Assume base58 PublicKey — need to decode
-        // Use the SDK's reduceToField which handles the conversion
-        const { PublicKey } = require("@solana/web3.js");
-        bytes = new PublicKey(mintAddress).toBytes();
-      }
-    } catch {
-      // Lazy on purpose: a base58 mint padded to 64 is not hex, so computing
-      // this eagerly threw before the branch above ever ran.
-      bytes = hexToBytes(mintAddress.padStart(64, "0"));
-    }
+    // 64 hex chars is a raw token id; anything else is a base58 mint.
+    //
+    // Decoded with getAddressEncoder, the same path pda.ts uses, because
+    // require("@solana/web3.js") is not callable from an ESM browser bundle —
+    // it threw for every base58 mint, and the hex fallback behind it threw
+    // again on the same input. There is no fallback now: both branches are
+    // total for their input, and a malformed mint should raise, not be padded
+    // into a different token's id.
+    const bytes =
+      mintAddress.length === 64 && /^[0-9a-fA-F]+$/.test(mintAddress)
+        ? hexToBytes(mintAddress)
+        : new Uint8Array(getAddressEncoder().encode(mintAddress as Address));
 
     const tokenId = computeTokenId(bytes);
     this._tokenIdCache.set(mintAddress, tokenId);
