@@ -269,8 +269,6 @@ export class UTXOpiaClient {
     const cached = this._tokenIdCache.get(mintAddress);
     if (cached !== undefined) return cached;
 
-    // Requires PublicKey — import dynamically to avoid hard dep
-    const mintBytes = hexToBytes(mintAddress.padStart(64, "0"));
     // If it's a base58 address, convert via PublicKey
     let bytes: Uint8Array;
     try {
@@ -284,7 +282,9 @@ export class UTXOpiaClient {
         bytes = new PublicKey(mintAddress).toBytes();
       }
     } catch {
-      bytes = mintBytes;
+      // Lazy on purpose: a base58 mint padded to 64 is not hex, so computing
+      // this eagerly threw before the branch above ever ran.
+      bytes = hexToBytes(mintAddress.padStart(64, "0"));
     }
 
     const tokenId = computeTokenId(bytes);
