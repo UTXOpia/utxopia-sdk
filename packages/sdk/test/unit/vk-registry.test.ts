@@ -4,6 +4,7 @@ import {
   buildVkRegistryData,
   parseVkRegistry,
   assertVkRegistryForShape,
+  assertVkeyMatchesRegistry,
   isVkRegistryReady,
   computeVkHash,
   joinSplitNumPublicInputs,
@@ -110,5 +111,55 @@ describe("vk-registry", () => {
     const b = computeVkHash(makeVkey());
     expect(Buffer.from(a).equals(Buffer.from(b))).toBe(true);
     expect(a.length).toBe(32);
+  });
+});
+
+describe("assertVkeyMatchesRegistry", () => {
+  // A registry account holding exactly the key `vkey` describes.
+  function registryFor(vkey: SnarkjsVkeyJson, nIn = 1, nOut = 2): Uint8Array {
+    const material = vkeyJsonToVkMaterial(vkey, nIn, nOut);
+    const acct = new Uint8Array(VK_REGISTRY_LEN);
+    acct[0] = VK_REGISTRY_DISCRIMINATOR;
+    acct[2] = nIn;
+    acct[3] = nOut;
+    acct.set(material.vkHash, 36);
+    acct.set(material.deltaG2, 68);
+    acct[196] = material.ic.length;
+    material.ic.forEach((p, i) => acct.set(p, 228 + i * 64));
+    return acct;
+  }
+
+  it("accepts artifacts that produced the registered key", () => {
+    const vkey = makeVkey();
+    expect(() => assertVkeyMatchesRegistry(vkey, registryFor(vkey), 1, 2)).not.toThrow();
+  });
+
+  it("rejects a vkey from a different phase-2 setup", () => {
+    // Same ceremony (alpha/beta/gamma untouched), different per-circuit delta — exactly the
+    // shape of the stale build still served at /circuits/groth16. The program's own vk_hash
+    // recomputation cannot catch this, because it binds delta+IC to alpha/beta/gamma and both
+    // builds share those.
+    const registered = makeVkey();
+    const stale = structuredClone(registered);
+    stale.vk_delta_2[0][0] = "999";
+
+    expect(registered.vk_alpha_1).toEqual(stale.vk_alpha_1);
+    expect(() => assertVkeyMatchesRegistry(stale, registryFor(registered), 1, 2)).toThrow(
+      /do not match the on-chain verifying key/,
+    );
+  });
+
+  it("names the shape when the artifacts are for a different one", () => {
+    const vkey = makeVkey();
+    const wrongShape = structuredClone(vkey);
+    wrongShape.IC = wrongShape.IC.slice(0, 5);
+    expect(() => assertVkeyMatchesRegistry(wrongShape, registryFor(vkey), 1, 2)).toThrow(
+      /different shape/,
+    );
+  });
+
+  it("still reports an uninitialised registry rather than a hash mismatch", () => {
+    const vkey = makeVkey();
+    expect(() => assertVkeyMatchesRegistry(vkey, null, 1, 2)).toThrow(/not initialized/);
   });
 });

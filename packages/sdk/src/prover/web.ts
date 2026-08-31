@@ -68,12 +68,34 @@ const isNode = typeof process !== "undefined" && process.versions?.node;
 let circuitBasePath = isBrowser ? "/circuits/groth16" : "./circuits";
 
 /**
+ * Fetch a circuit's `*.vkey.json` from the same base path its zkey comes from.
+ *
+ * Deliberately reads `circuitBasePath` rather than taking a URL: the point of the check this
+ * feeds (`assertVkeyMatchesRegistry`) is that the vkey describes the artifacts actually being
+ * proved with, and a caller-supplied URL could describe a different build entirely.
+ */
+export async function fetchCircuitVkey(circuitType: CircuitType): Promise<unknown> {
+  const cached = vkeyCache.get(circuitType);
+  if (cached) return cached;
+
+  const url = `${circuitBasePath}/${circuitType}/${circuitType}.vkey.json`;
+  const res = await fetch(url);
+  if (!res.ok) {
+    throw new Error(`Could not fetch circuit vkey ${url}: ${res.status} ${res.statusText}`);
+  }
+  const vkey = await res.json();
+  vkeyCache.set(circuitType, vkey);
+  return vkey;
+}
+
+/**
  * Set the base path for circuit artifacts
  */
 export function setCircuitPath(path: string): void {
   if (path === circuitBasePath) return;
   circuitBasePath = path;
   circuitCache.clear();
+  vkeyCache.clear();
   artifactBytesCache.clear();
   artifactDownloadCache.clear();
 }
@@ -87,6 +109,7 @@ interface CircuitArtifact {
 }
 
 const circuitCache = new Map<CircuitType, CircuitArtifact>();
+const vkeyCache = new Map<CircuitType, unknown>();
 let proverInitialized = false;
 
 /**

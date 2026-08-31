@@ -293,3 +293,55 @@ export function isVkRegistryReady(
     return false;
   }
 }
+
+/**
+ * Assert the circuit artifacts this client loaded correspond to the verifying key the chain
+ * will check against.
+ *
+ * `assertVkRegistryForShape` proves the registry exists and names the right shape;
+ * `setCircuitArtifactDigests` proves the artifacts are the bytes this build expects. Neither
+ * ties the two together, and that gap is a real one: a zkey from a different phase-2 setup
+ * proves fine, downloads fine, passes every integrity check, and is then rejected on chain as
+ * "proof invalid" — with nothing pointing at the version mismatch.
+ *
+ * It is not hypothetical. `https://circuit.utxopia.com/circuits/groth16` and
+ * `.../circuits/v2/groth16` both serve 200s for every shape, with different `delta` — same
+ * ceremony, different per-circuit setup. Both therefore satisfy the program's own vk_hash
+ * recomputation, which binds delta+IC to the compiled-in alpha/beta/gamma and so catches a
+ * foreign ceremony but NOT a stale phase-2 from the right one. This is the check that does.
+ *
+ * @param vkey          The `*.vkey.json` fetched from the SAME base path as the zkey. Fetching
+ *                      it from anywhere else makes this assertion meaningless.
+ * @param registryData  Raw `VkRegistry` account data for the shape.
+ */
+export function assertVkeyMatchesRegistry(
+  vkey: SnarkjsVkeyJson,
+  registryData: Uint8Array | null | undefined,
+  nInputs: number,
+  nOutputs: number,
+): void {
+  const registry = assertVkRegistryForShape(registryData, nInputs, nOutputs);
+
+  const expectedIc = joinSplitNumPublicInputs(nInputs, nOutputs) + 1;
+  if (vkey.IC.length !== expectedIc) {
+    throw new Error(
+      `Circuit vkey for JoinSplit ${nInputs}x${nOutputs} has ${vkey.IC.length} IC points, ` +
+        `expected ${expectedIc} — the artifacts are for a different shape.`,
+    );
+  }
+
+  const local = computeVkHash(vkey);
+  if (!local.every((b, i) => b === registry.vkHash[i])) {
+    throw new Error(
+      `Circuit artifacts for JoinSplit ${nInputs}x${nOutputs} do not match the on-chain ` +
+        `verifying key (artifact vkHash ${bytesToHex(local)}, registry ${bytesToHex(registry.vkHash)}). ` +
+        `A proof built from these would be rejected as invalid. Usually the circuit base URL ` +
+        `points at a stale build — check it resolves to the same version the registry was ` +
+        `registered from.`,
+    );
+  }
+}
+
+function bytesToHex(b: Uint8Array): string {
+  return Array.from(b, (x) => x.toString(16).padStart(2, "0")).join("");
+}

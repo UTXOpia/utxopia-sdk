@@ -807,6 +807,7 @@ export {
   buildVkRegistryData,
   parseVkRegistry,
   assertVkRegistryForShape,
+  assertVkeyMatchesRegistry,
   isVkRegistryReady,
   type JoinSplitVkMaterial,
   type SnarkjsVkeyJson,

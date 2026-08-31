@@ -358,8 +358,11 @@ export const MAINNET_CONFIG: NetworkConfig = {
   bitcoinNetwork: "mainnet",
   esploraUrl: "https://mempool.space/api",
 
-  // Circuit CDN
-  circuitCdnUrl: "https://circuit.utxopia.com",
+  // Circuit CDN. Must carry the full versioned path: `resolveCircuitPath` turns a bare host
+  // into `<host>/circuits/groth16`, which is a DIFFERENT, stale build that still serves 200s
+  // for every shape with a different delta. Proofs built from it verify locally and are
+  // rejected on chain as "proof invalid".
+  circuitCdnUrl: "https://circuit.utxopia.com/circuits/v2/groth16",
 
   // Groth16 Verifier (placeholder)
   groth16VerifierProgramId: address("11111111111111111111111111111111"),
