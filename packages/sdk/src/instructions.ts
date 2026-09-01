@@ -629,6 +629,60 @@ export interface TransactInstructionOptions {
 }
 
 /**
+ * What a JoinSplit declares it is passing, mirroring `jsflags` on-chain.
+ *
+ * This byte used to be `proof_source`, valued 0 or 1. Bit 0 keeps that exact
+ * meaning so no instruction-data offset moved; the rest replaced the program's
+ * positional heuristics, which recovered the optional account tail by counting
+ * backwards from the end and by asking whether an account "looked like" a
+ * commitment tree or carried the policy program's id.
+ *
+ * A flag only says which slot to read. The program still validates owner,
+ * signer and seeds on every slot, so declaring the wrong thing breaks your own
+ * transaction rather than buying anything.
+ */
+export const JSFLAGS = {
+  PROOF_IN_BUFFER: 1 << 0,
+  RELAYER: 1 << 1,
+  FROZEN_SOURCE_TREE: 1 << 2,
+  POLICY: 1 << 3,
+  QUEUED_LEAVES: 1 << 4,
+  RAGEQUIT: 1 << 5,
+} as const;
+
+/** Which permissioned tail a spend carries. */
+export type PolicyTailKind = "none" | "verified" | "ragequit";
+
+export interface JoinSplitTailOptions {
+  /** 0=inline proof (default), 1=proof in a separate ChadBuffer account */
+  proofSource?: 0 | 1;
+  /** A relayer signs and pays instead of the note owner. transact only. */
+  hasRelayer?: boolean;
+  /** A rotated-out CommitmentTree proves membership of pre-rotation notes. */
+  hasFrozenSourceTree?: boolean;
+  /**
+   * Permissioned tail. "verified" appends (approval, policyProgram);
+   * "ragequit" appends one registered ExitDestination per public output.
+   * Must match the pool: the program cross-checks against pool.permissioned().
+   */
+  policyTail?: PolicyTailKind;
+}
+
+/**
+ * Assemble the flags byte. Kept in one place so the data builders and the
+ * account builders cannot disagree about what was declared.
+ */
+export function joinSplitFlags(options: JoinSplitTailOptions): number {
+  let flags = 0;
+  if ((options.proofSource ?? 0) === 1) flags |= JSFLAGS.PROOF_IN_BUFFER;
+  if (options.hasRelayer) flags |= JSFLAGS.RELAYER;
+  if (options.hasFrozenSourceTree) flags |= JSFLAGS.FROZEN_SOURCE_TREE;
+  if (options.policyTail === "verified") flags |= JSFLAGS.POLICY;
+  if (options.policyTail === "ragequit") flags |= JSFLAGS.RAGEQUIT;
+  return flags;
+}
+
+/**
  * Build transact instruction data (JoinSplit)
  *
  * Layout (after disc stripped by entrypoint):
@@ -653,11 +707,9 @@ export function buildTransactInstructionData(options: {
   nullifiers: Uint8Array[];
   commitmentsOut: Uint8Array[];
   stealthData: Uint8Array[];
-  /** 0=inline proof (default), 1=proof in separate ChadBuffer account */
-  proofSource?: 0 | 1;
   /** Reserved. Sender memos are rejected until they are proof-bound. */
   senderMemos?: Uint8Array[];
-}): Uint8Array {
+} & JoinSplitTailOptions): Uint8Array {
   const { nInputs, nOutputs, proofBytes, merkleRoot, boundParamsHash, nullifiers, commitmentsOut, stealthData, senderMemos } = options;
   const proofSource = options.proofSource ?? 0;
 
@@ -693,7 +745,7 @@ export function buildTransactInstructionData(options: {
   data[offset++] = nInputs;
   data[offset++] = nOutputs;
   data[offset++] = 0; // n_public_outputs = 0 for transact
-  data[offset++] = proofSource;
+  data[offset++] = joinSplitFlags(options);
 
   // Proof (256 bytes, only in inline mode)
   if (proofSource === 0 && proofBytes) {
@@ -754,6 +806,10 @@ export function buildTransactInstruction(options: TransactInstructionOptions): I
     commitmentsOut: options.commitmentsOut,
     stealthData: options.stealthData,
     senderMemos: options.senderMemos,
+    // The account list below appends the policy pair exactly when the caller
+    // supplies an approval, so the declared tail is derived from the same fact
+    // rather than asked for twice.
+    policyTail: options.accounts.policyApproval ? "verified" : "none",
   });
 
   const accounts: Instruction["accounts"] = [
@@ -826,8 +882,7 @@ export function buildRedeemInstructionData(options: {
   /** Unique request nonce(s) — single or array */
   requestNonces: bigint[];
   /** 0=inline proof (default), 1=proof in separate ChadBuffer account */
-  proofSource?: 0 | 1;
-}): Uint8Array {
+} & JoinSplitTailOptions): Uint8Array {
   const {
     nInputs, nOutputs, proofBytes, merkleRoot, boundParamsHash,
     nullifiers, commitmentsOut, stealthData, redeemAmounts, btcScripts, requestNonces,
@@ -888,7 +943,7 @@ export function buildRedeemInstructionData(options: {
   data[offset++] = nInputs;
   data[offset++] = nOutputs;
   data[offset++] = nPublicOutputs;
-  data[offset++] = proofSource;
+  data[offset++] = joinSplitFlags(options);
 
   // Proof (256 bytes, only in inline mode)
   if (proofSource === 0 && proofBytes) {
@@ -1010,8 +1065,7 @@ export function buildUnshieldInstructionData(options: {
   /** Amount(s) being unshielded — single or array */
   unshieldAmounts: bigint[];
   /** 0=inline proof (default), 1=proof in separate ChadBuffer account */
-  proofSource?: 0 | 1;
-}): Uint8Array {
+} & JoinSplitTailOptions): Uint8Array {
   const { nInputs, nOutputs, proofBytes, merkleRoot, boundParamsHash, nullifiers, commitmentsOut, stealthData, unshieldAmounts } = options;
   const nPublicOutputs = options.nPublicOutputs ?? unshieldAmounts.length;
   const proofSource = options.proofSource ?? 0;
@@ -1054,7 +1108,7 @@ export function buildUnshieldInstructionData(options: {
   data[offset++] = nInputs;
   data[offset++] = nOutputs;
   data[offset++] = nPublicOutputs;
-  data[offset++] = proofSource;
+  data[offset++] = joinSplitFlags(options);
 
   // Proof (256 bytes, only in inline mode)
   if (proofSource === 0 && proofBytes) {

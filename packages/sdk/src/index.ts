@@ -717,6 +717,8 @@ export {
   bigintTo32Bytes,
   bytes32ToBigint,
   // JoinSplit transact instruction
+  JSFLAGS,
+  joinSplitFlags,
   buildTransactInstructionData,
   buildTransactInstruction,
   // JoinSplit + BTC redeem instruction
@@ -758,6 +760,8 @@ export {
   buildRotateAuditorInstructionData,
   buildRotateAuditorInstruction,
   type MagicBlockDelegateTarget,
+  type JoinSplitTailOptions,
+  type PolicyTailKind,
   type MagicBlockDelegateInstructionOptions,
   type MagicBlockCommitInstructionOptions,
   type MagicBlockPerPermissionOperation,
