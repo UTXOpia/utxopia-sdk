@@ -504,6 +504,8 @@ export {
   derivePoolStatePDA,
   deriveCommitmentTreePDA,
   deriveNullifierRecordPDA,
+  deriveQueuedLeafPDA,
+  queuedLeafSeeds,
   derivePolicyApprovalPDA,
   deriveExitDestinationPDA,
   EXIT_KIND_SOLANA_OWNER,
