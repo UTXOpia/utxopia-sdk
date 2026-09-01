@@ -230,7 +230,16 @@ export class CommitmentTreeIndex {
       throw new Error("Tree is full");
     }
 
-    // Store in map for lookup
+    // Store in map for lookup.
+    //
+    // Test-only helper, and this map is why: a commitment is NOT unique in the
+    // tree. Paying the same BTC deposit address twice for the same amount yields
+    // byte-identical commitments (complete_deposit hashes note_public_key,
+    // token_id and shielded_amount), so a second add overwrites the first and
+    // getMerkleProof then returns only the later leaf. Production never takes
+    // this path — announcements dedupe on leafIndex and proofs come from
+    // /api/tree/proof/:leaf_index — but do not promote this class to a wallet
+    // path without keying on leafIndex instead.
     const commitmentHex = commitment.toString(16).padStart(64, "0");
     this.commitments.set(commitmentHex, { index: leafIndex, amount });
 
