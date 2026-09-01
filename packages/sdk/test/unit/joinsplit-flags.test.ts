@@ -62,3 +62,54 @@ describe("transact data carries the flags in the header", () => {
     ).toBe(JSFLAGS.FROZEN_SOURCE_TREE);
   });
 });
+
+describe("queued placement", () => {
+  test("declaring queued leaves sets the flag", () => {
+    expect(joinSplitFlags({ hasQueuedLeaves: true })).toBe(JSFLAGS.QUEUED_LEAVES);
+  });
+
+  /**
+   * The leaf PDA is seeded on the commitment, so the same commitment cannot be
+   * queued twice. That matters because the circuit derives
+   * `nullifier = Poseidon(nullifyingKey, leafIndex)` — position, not content —
+   * so one commitment at two leaf indices yields two spendable nullifiers.
+   */
+  test("a queued leaf PDA is unique per commitment", async () => {
+    const { deriveQueuedLeafPDA } = await import("../../src/pda");
+    const pool = new Uint8Array(32).fill(9);
+    const [a] = await deriveQueuedLeafPDA(pool, new Uint8Array(32).fill(1));
+    const [b] = await deriveQueuedLeafPDA(pool, new Uint8Array(32).fill(1));
+    const [c] = await deriveQueuedLeafPDA(pool, new Uint8Array(32).fill(2));
+    expect(a).toBe(b);
+    expect(a).not.toBe(c);
+  });
+});
+
+describe("buildMergeQueuedLeavesInstruction", () => {
+  const addr = (n: number) =>
+    ("1".repeat(31) + String.fromCharCode(65 + n)) as unknown as never;
+
+  test("refuses a duplicated leaf before the program has to", async () => {
+    const { buildMergeQueuedLeavesInstruction } = await import("../../src/instructions");
+    const leaf = addr(1);
+    expect(() =>
+      buildMergeQueuedLeavesInstruction({
+        accounts: { caller: addr(2), poolState: addr(3), commitmentTree: addr(4) },
+        leaves: [
+          { queuedLeaf: leaf, rentRecipient: addr(5) },
+          { queuedLeaf: leaf, rentRecipient: addr(5) },
+        ],
+      })
+    ).toThrow(/Duplicate queued leaf/);
+  });
+
+  test("refuses an empty batch", async () => {
+    const { buildMergeQueuedLeavesInstruction } = await import("../../src/instructions");
+    expect(() =>
+      buildMergeQueuedLeavesInstruction({
+        accounts: { caller: addr(2), poolState: addr(3), commitmentTree: addr(4) },
+        leaves: [],
+      })
+    ).toThrow(/at least one leaf/);
+  });
+});

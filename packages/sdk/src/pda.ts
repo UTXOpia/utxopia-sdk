@@ -46,6 +46,7 @@ export const PDA_SEEDS = {
   VK_REGISTRY: "vk_registry",
   TOKEN_CONFIG: "token_config",
   POOL_CONFIG: "pool_config",
+  QUEUED_LEAF: "queued_leaf",
 } as const;
 
 // =============================================================================
@@ -318,6 +319,39 @@ export async function deriveNullifierRecordPDA(
   const result = await getProgramDerivedAddress({
     programAddress: programId,
     seeds: nullifierRecordSeeds(nullifierHash, poolState, treeIndex),
+  });
+  return [result[0], result[1]];
+}
+
+/**
+ * Seeds for a `QueuedLeaf`: `["queued_leaf", pool_state, commitment]`.
+ *
+ * The commitment is the seed because it is already unique per output — which
+ * makes a second attempt to queue the same commitment fail on account creation
+ * rather than silently produce a second leaf for one note.
+ */
+export function queuedLeafSeeds(
+  poolState: Address | Uint8Array,
+  commitment: Uint8Array
+): Uint8Array[] {
+  return [
+    enc(PDA_SEEDS.QUEUED_LEAF),
+    seedBytes(poolState, "poolState"),
+    seedBytes(commitment, "commitment"),
+  ];
+}
+
+/**
+ * Derive the `QueuedLeaf` PDA a queued spend creates for one output.
+ */
+export async function deriveQueuedLeafPDA(
+  poolState: Address | Uint8Array,
+  commitment: Uint8Array,
+  programId: Address = UTXOPIA_PROGRAM_ID
+): Promise<[Address, number]> {
+  const result = await getProgramDerivedAddress({
+    programAddress: programId,
+    seeds: queuedLeafSeeds(poolState, commitment),
   });
   return [result[0], result[1]];
 }

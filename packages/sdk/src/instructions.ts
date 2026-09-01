@@ -85,6 +85,7 @@ const INSTRUCTION = {
   SET_AUDITOR_FROZEN: 28,
   SET_AUDITOR_VIEWING_PUBKEY: 29,
   // MagicBlock ER/PER lifecycle helpers (32-33)
+  MERGE_QUEUED_LEAVES: 40,
   MAGICBLOCK_DELEGATE: 32,
   MAGICBLOCK_COMMIT: 33,
   MAGICBLOCK_PER_PERMISSION: 34,
@@ -619,6 +620,12 @@ export interface TransactInstructionOptions {
   accounts: {
     poolState: Address;
     commitmentTree: Address;
+    /**
+     * Supply one `QueuedLeaf` PDA per output to defer placement. Doing so also
+     * flips poolState and commitmentTree to read-only, which is what lets two
+     * spends run in the same slot.
+     */
+    queuedLeaves?: Address[];
     vkRegistry: Address;
     user: Address;
     /** Nullifier record PDAs (one per input) */
@@ -666,6 +673,8 @@ export interface JoinSplitTailOptions {
    * Must match the pool: the program cross-checks against pool.permissioned().
    */
   policyTail?: PolicyTailKind;
+  /** Outputs are queued as QueuedLeaf PDAs instead of inserted inline. */
+  hasQueuedLeaves?: boolean;
 }
 
 /**
@@ -679,6 +688,7 @@ export function joinSplitFlags(options: JoinSplitTailOptions): number {
   if (options.hasFrozenSourceTree) flags |= JSFLAGS.FROZEN_SOURCE_TREE;
   if (options.policyTail === "verified") flags |= JSFLAGS.POLICY;
   if (options.policyTail === "ragequit") flags |= JSFLAGS.RAGEQUIT;
+  if (options.hasQueuedLeaves) flags |= JSFLAGS.QUEUED_LEAVES;
   return flags;
 }
 
@@ -795,6 +805,13 @@ export function buildTransactInstructionData(options: {
  */
 export function buildTransactInstruction(options: TransactInstructionOptions): Instruction {
   const config = getConfig();
+  const queuedLeaves = options.accounts.queuedLeaves ?? [];
+  const queued = queuedLeaves.length > 0;
+  if (queued && queuedLeaves.length !== options.nOutputs) {
+    throw new Error(
+      `Queued placement needs one QueuedLeaf PDA per output: expected ${options.nOutputs}, got ${queuedLeaves.length}`
+    );
+  }
 
   const data = buildTransactInstructionData({
     nInputs: options.nInputs,
@@ -810,11 +827,19 @@ export function buildTransactInstruction(options: TransactInstructionOptions): I
     // supplies an approval, so the declared tail is derived from the same fact
     // rather than asked for twice.
     policyTail: options.accounts.policyApproval ? "verified" : "none",
+    hasQueuedLeaves: queued,
   });
 
+  // A queued spend writes neither shared account — the tree is read for
+  // is_valid_root, pool_state for its policy flags — and the program REJECTS
+  // them as writable. Sealevel serialises on the declared metas, not on what
+  // the program does, so leaving them writable would take both locks and
+  // silently cost the parallelism the queue exists for.
+  const sharedRole = queued ? AccountRole.READONLY : AccountRole.WRITABLE;
+
   const accounts: Instruction["accounts"] = [
-    { address: options.accounts.poolState, role: AccountRole.WRITABLE },
-    { address: options.accounts.commitmentTree, role: AccountRole.WRITABLE },
+    { address: options.accounts.poolState, role: sharedRole },
+    { address: options.accounts.commitmentTree, role: sharedRole },
     { address: options.accounts.vkRegistry, role: AccountRole.READONLY },
     { address: options.accounts.user, role: AccountRole.WRITABLE_SIGNER },
     { address: SYSTEM_PROGRAM_ADDRESS, role: AccountRole.READONLY },
@@ -830,6 +855,11 @@ export function buildTransactInstruction(options: TransactInstructionOptions): I
       address: config.policyProgramId ?? config.utxopiaProgramId,
       role: AccountRole.READONLY,
     });
+  }
+  // Order matches resolve_joinsplit_tail: relayer, source tree, policy, queued
+  // leaves, proof buffer. One PDA per output, in output order.
+  for (const leaf of queuedLeaves) {
+    accounts.push({ address: leaf, role: AccountRole.WRITABLE });
   }
 
   return {
@@ -2655,5 +2685,79 @@ export function buildRotateAuditorInstruction(options: RotateAuditorOptions): In
       { address: options.accounts.authority, role: AccountRole.READONLY_SIGNER },
     ],
     data: buildRotateAuditorInstructionData(options.auditor, options.viewingPubkey),
+  };
+}
+
+// =============================================================================
+// merge_queued_leaves (disc=40)
+// =============================================================================
+
+export interface MergeQueuedLeavesOptions {
+  accounts: {
+    /** Pays the fee. A relayer, or the holder taking the escape hatch. */
+    caller: Address;
+    poolState: Address;
+    commitmentTree: Address;
+  };
+  /**
+   * The leaves to place, in the order they should land: leaf `i` gets
+   * `first_leaf_index + i`. Each needs the payer recorded in the account —
+   * rent goes there, never to the caller, so racing to merge earns nothing.
+   */
+  leaves: { queuedLeaf: Address; rentRecipient: Address }[];
+}
+
+/** Matches MAX_MERGE_LEAVES on-chain: two accounts per leaf under the 64-account cap. */
+export const MAX_MERGE_LEAVES = 24;
+
+/**
+ * Place queued commitments into the tree and close their accounts.
+ *
+ * Permissionless: anyone may call this, which is what makes a QueuedLeaf
+ * recoverable without a timeout — no operator can strand a note, because the
+ * holder can merge it themselves.
+ *
+ * Prefer having a relayer call it. Self-merging links a Solana identity to one
+ * specific leaf and the timing says the holder is in a hurry to spend it, so it
+ * is the escape hatch rather than the path. Merge cadence is a privacy
+ * parameter, not only a UX one.
+ */
+export function buildMergeQueuedLeavesInstruction(
+  options: MergeQueuedLeavesOptions
+): Instruction {
+  const config = getConfig();
+  if (options.leaves.length === 0) {
+    throw new Error("merge_queued_leaves needs at least one leaf");
+  }
+  if (options.leaves.length > MAX_MERGE_LEAVES) {
+    throw new Error(
+      `merge_queued_leaves takes at most ${MAX_MERGE_LEAVES} leaves, got ${options.leaves.length}`
+    );
+  }
+  // Duplicates would insert one commitment at two leaf indices, and nullifiers
+  // are derived from (key, leaf index) — the program refuses it, but catching it
+  // here names the problem instead of surfacing NullifierAlreadyUsed.
+  const seen = new Set<string>();
+  for (const { queuedLeaf } of options.leaves) {
+    if (seen.has(queuedLeaf)) {
+      throw new Error(`Duplicate queued leaf in one merge: ${queuedLeaf}`);
+    }
+    seen.add(queuedLeaf);
+  }
+
+  const accounts: Instruction["accounts"] = [
+    { address: options.accounts.caller, role: AccountRole.WRITABLE_SIGNER },
+    { address: options.accounts.poolState, role: AccountRole.WRITABLE },
+    { address: options.accounts.commitmentTree, role: AccountRole.WRITABLE },
+  ];
+  for (const { queuedLeaf, rentRecipient } of options.leaves) {
+    accounts.push({ address: queuedLeaf, role: AccountRole.WRITABLE });
+    accounts.push({ address: rentRecipient, role: AccountRole.WRITABLE });
+  }
+
+  return {
+    programAddress: config.utxopiaProgramId,
+    accounts,
+    data: Uint8Array.of(INSTRUCTION.MERGE_QUEUED_LEAVES),
   };
 }

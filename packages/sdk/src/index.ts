@@ -719,6 +719,8 @@ export {
   // JoinSplit transact instruction
   JSFLAGS,
   joinSplitFlags,
+  buildMergeQueuedLeavesInstruction,
+  MAX_MERGE_LEAVES,
   buildTransactInstructionData,
   buildTransactInstruction,
   // JoinSplit + BTC redeem instruction
