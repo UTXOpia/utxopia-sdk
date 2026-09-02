@@ -1,5 +1,46 @@
 # Changelog
 
+## 0.1.0-alpha.8
+
+The JoinSplit account tail is now declared, not inferred, and a spend can defer
+its tree write so two spends can share a slot.
+
+**Breaking**
+- The JoinSplit header byte at `data[3]` was `proof_source` (0 or 1) and is now
+  a flags byte. Bit 0 keeps its exact meaning, so no instruction-data offset
+  moved, but the program no longer recovers the optional account tail by
+  counting backwards from the end of the account list or by asking whether an
+  account "looks like" a commitment tree. Anything that assembles JoinSplit
+  accounts by hand must declare what it appends.
+- A permissioned spend must declare `policyTail: "verified" | "ragequit"`.
+  Sending the old zero byte on a permissioned pool is refused rather than
+  guessed at. The program cross-checks the flag against `pool.permissioned()`,
+  which is authoritative.
+- `unshield` and `redeem` reject a declared relayer: neither has a relayer path,
+  and ignoring the flag would shift every slot after it.
+
+**Added**
+- `JSFLAGS`, `joinSplitFlags()` — one assembler for the byte, so the data
+  builders and the account builders cannot disagree about what was declared.
+- `buildTransactInstruction` takes `accounts.queuedLeaves` — one `QueuedLeaf`
+  PDA per output. Supplying them flips `poolState` and `commitmentTree` to
+  READONLY, which is the part that buys parallelism: Sealevel schedules from the
+  declared metas, not from what the program does, so leaving them writable takes
+  both locks and silently gains nothing. The program rejects writable metas on a
+  queued spend for that reason.
+- `buildMergeQueuedLeavesInstruction`, `MAX_MERGE_LEAVES` — places queued
+  commitments in one batch and settles the deferred nullifier count. Anyone may
+  call it, which is what makes a queued leaf recoverable without a timeout.
+  Rejects duplicates: the circuit derives `nullifier = Poseidon(nullifyingKey,
+  leafIndex)`, so one commitment at two leaf indices yields two spendable
+  nullifiers from a single deposit.
+- `deriveQueuedLeafPDA`, `queuedLeafSeeds`.
+
+**Note**
+- A fee payer is writable by definition, so spends paid by one relayer key still
+  serialise on that key. Parallel relaying needs a pool of payer keys; no
+  program change can lift it.
+
 ## 0.1.0-alpha.5
 
 Makes regtest a network the SDK actually knows, and cuts the package's dead weight.
